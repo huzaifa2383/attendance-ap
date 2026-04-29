@@ -5,54 +5,35 @@
   <title>Madrasa Pro Attendance</title>
   <style>
     body { font-family: Arial; text-align:center; }
-    select,input,button { padding:10px; margin:5px; }
-    table { border-collapse:collapse; width:95%; margin:auto; }
-    th,td { border:1px solid #ccc; padding:8px; }
-    #map { height:200px; }
+    input, select, button { padding:10px; margin:5px; }
+    table { border-collapse: collapse; width:90%; margin:auto; }
+    th, td { border:1px solid #ccc; padding:8px; }
+    #map { height:200px; margin:10px; }
   </style>
 </head>
 
 <body>
 
-<h2>📍 Madrasa Pro Attendance</h2>
+<h2>📍 Madrasa Attendance PRO</h2>
 
-<select id="name">
-  <option value="">Select Name</option>
-  <option>Shk Huzaifa bhai</option>
-  <option>Shk Khuzaima bhai</option>
-  <option>Shk Taha bhai</option>
-  <option>Mulla Mohammad bhai</option>
-  <option>Farida ben</option>
-  <option>Arwa ben</option>
-  <option>Rashida ben</option>
-  <option>UmmeSalama ben</option>
-</select>
-
-<br>
-
-<input type="password" id="pin" placeholder="Enter PIN">
-
-<br>
+<select id="teacher"></select><br> <input type="password" id="pin" placeholder="Enter PIN"><br>
 
 <button onclick="checkIn()">Check In</button> <button onclick="checkOut()">Check Out</button>
 
 <p id="status"></p>
-
 <div id="map"></div>
 
 <hr>
 
 <h3>🔒 Admin Panel</h3>
-<input type="password" id="adminPin" placeholder="Admin PIN">
+<input type="password" id="adminPin" placeholder="Admin PIN"><br>
 
-<br>
+<button onclick="loadData()">Load</button> <button onclick="downloadCSV()">CSV</button> <button onclick="monthlySummary()">Summary</button> <button onclick="addHoliday()">Add Holiday</button>
 
-<button onclick="loadData()">Load</button> <button onclick="downloadCSV()">CSV</button> <button onclick="summary()">Summary</button> <button onclick="addHoliday()">Add Holiday</button>
-
-<table id="data"></table>
+<table id="table"></table>
 
 <h3>📊 Monthly Summary</h3>
-<table id="sum"></table>
+<table id="summary"></table>
 
 <script type="module">
 
@@ -72,95 +53,105 @@ const firebaseConfig = {
   measurementId: "G-EK7LF2NLVE"
 };
 
-
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 // 🔐 CONFIG
-const ADMIN_PIN = "7860";
+const ADMIN_PIN = "1234";
 
-const USER_PINS = {
-  "Shk Huzaifa bhai":"1111",
-  "Shk Khuzaima bhai":"2222",
-  "Shk Taha bhai":"3333",
-  "Mulla Mohammad bhai":"4444",
-  "Farida ben":"5555",
-  "Arwa ben":"6666",
-  "Rashida ben":"7777",
-  "UmmeSalama ben":"8888"
+const USERS = {
+  "Shk Huzaifa bhai": "1111",
+  "Shk Khuzaima bhai": "2222",
+  "Shk Taha bhai": "3333",
+  "Mulla Mohammad bhai": "4444",
+  "Farida ben": "5555",
+  "Arwa ben": "6666",
+  "Rashida ben": "7777",
+  "UmmeSalama ben": "8888"
 };
 
 // 📍 LOCATION
 const SCHOOL_LAT = 18.51278;
 const SCHOOL_LNG = 73.87936;
-const RADIUS = 50;
+const RADIUS = 100;
 
-let currentDistance = 999;
+let distance = 999;
 
-// 📍 LIVE LOCATION
+// load names
+for(let u in USERS){
+  teacher.innerHTML += `<option>${u}</option>`;
+}
+
+// 📍 GPS
 navigator.geolocation.watchPosition(pos=>{
-  const lat=pos.coords.latitude;
-  const lng=pos.coords.longitude;
+  const lat = pos.coords.latitude;
+  const lng = pos.coords.longitude;
 
-  currentDistance = distance(lat,lng,SCHOOL_LAT,SCHOOL_LNG);
+  distance = calc(lat,lng,SCHOOL_LAT,SCHOOL_LNG);
 
   status.innerHTML =
-    currentDistance<=RADIUS
-    ? "✅ Inside ("+Math.round(currentDistance)+"m)"
-    : "❌ Outside ("+Math.round(currentDistance)+"m)";
+    distance<=RADIUS ? `✅ Inside (${Math.round(distance)}m)` :
+                       `❌ Outside (${Math.round(distance)}m)`;
 
-  map.innerHTML =
-    `<iframe width="100%" height="200"
+  map.innerHTML = `<iframe width="100%" height="200"
     src="https://maps.google.com/maps?q=${lat},${lng}&z=15&output=embed"></iframe>`;
 });
 
 // 📏 DISTANCE
-function distance(lat1,lon1,lat2,lon2){
+function calc(a,b,c,d){
   const R=6371e3;
-  const φ1=lat1*Math.PI/180;
-  const φ2=lat2*Math.PI/180;
-  const Δφ=(lat2-lat1)*Math.PI/180;
-  const Δλ=(lon2-lon1)*Math.PI/180;
+  const φ1=a*Math.PI/180, φ2=c*Math.PI/180;
+  const Δφ=(c-a)*Math.PI/180;
+  const Δλ=(d-b)*Math.PI/180;
 
-  const a=Math.sin(Δφ/2)**2 +
-  Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  const x=Math.sin(Δφ/2)**2 +
+    Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
 
-  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ⏰ TIME RULE
-function validTime(){
+// ⏰ TIME
+function allowedTime(){
   const h=new Date().getHours();
   return h>=16 && h<=22;
 }
 
-// 🔐 CHECK PIN
-function checkUserPin(name,pin){
-  return USER_PINS[name]===pin;
+// 📅 HOLIDAY CHECK
+async function isHoliday(){
+  const today=new Date().toDateString();
+  const snap=await getDocs(collection(db,"holidays"));
+  for(const d of snap.docs){
+    if(d.data().date===today) return true;
+  }
+  return false;
 }
 
 // ✅ CHECK IN
 window.checkIn = async ()=>{
 
-  const nameVal = name.value;
-  const pinVal = pin.value;
-
-  if(!checkUserPin(nameVal,pinVal)){
-    alert("Wrong PIN"); return;
+  if(await isHoliday()){
+    alert("Holiday!"); return;
   }
 
-  if(currentDistance>RADIUS){
+  if(distance>RADIUS){
     alert("Outside area"); return;
   }
 
-  if(!validTime()){
-    alert("Only 4PM–10PM"); return;
+  if(!allowedTime()){
+    alert("Only 4–10 PM"); return;
+  }
+
+  const name=teacher.value;
+  const pinVal=pin.value;
+
+  if(USERS[name]!==pinVal){
+    alert("Wrong PIN"); return;
   }
 
   const today=new Date().toDateString();
 
   const q=query(collection(db,"attendance"),
-    where("name","==",nameVal),
+    where("name","==",name),
     where("date","==",today)
   );
 
@@ -176,15 +167,15 @@ window.checkIn = async ()=>{
   const cutoff=new Date();
   cutoff.setHours(16,50,0);
 
-  const statusVal = now>cutoff ? "Late":"On Time";
+  const stat = now>cutoff ? "Late" : "On Time";
 
   await addDoc(collection(db,"attendance"),{
-    name:nameVal,
+    name,
     date:today,
     checkIn:now.toLocaleTimeString(),
     checkOut:"",
-    status:statusVal,
-    distance:Math.round(currentDistance)
+    status:stat,
+    dist:Math.round(distance)
   });
 
   alert("Checked In");
@@ -193,12 +184,11 @@ window.checkIn = async ()=>{
 // ✅ CHECK OUT
 window.checkOut = async ()=>{
 
-  const nameVal=name.value;
-
+  const name=teacher.value;
   const today=new Date().toDateString();
 
   const q=query(collection(db,"attendance"),
-    where("name","==",nameVal),
+    where("name","==",name),
     where("date","==",today)
   );
 
@@ -214,7 +204,7 @@ window.checkOut = async ()=>{
     }
   }
 
-  alert("No active check-in");
+  alert("No check-in found");
 };
 
 // 📊 LOAD
@@ -226,7 +216,7 @@ window.loadData = async ()=>{
 
   const snap=await getDocs(collection(db,"attendance"));
 
-  let html="<tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Dist</th><th>Delete</th></tr>";
+  let html="<tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Dist</th><th>Del</th></tr>";
 
   snap.forEach(d=>{
     const x=d.data();
@@ -236,12 +226,12 @@ window.loadData = async ()=>{
       <td>${x.checkIn}</td>
       <td>${x.checkOut||"-"}</td>
       <td>${x.status}</td>
-      <td>${x.distance}m</td>
-      <td><button onclick="del('${d.id}')">Delete</button></td>
+      <td>${x.dist}m</td>
+      <td><button onclick="del('${d.id}')">X</button></td>
     </tr>`;
   });
 
-  data.innerHTML=html;
+  table.innerHTML=html;
 };
 
 // 🗑 DELETE
@@ -254,19 +244,20 @@ window.del = async (id)=>{
 window.downloadCSV = async ()=>{
   const snap=await getDocs(collection(db,"attendance"));
   let csv="Name,Date,In,Out,Status,Distance\n";
+
   snap.forEach(d=>{
     const x=d.data();
-    csv+=`${x.name},${x.date},${x.checkIn},${x.checkOut},${x.status},${x.distance}\n`;
+    csv+=`${x.name},${x.date},${x.checkIn},${x.checkOut},${x.status},${x.dist}\n`;
   });
-  const blob=new Blob([csv]);
+
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
+  a.href=URL.createObjectURL(new Blob([csv]));
   a.download="attendance.csv";
   a.click();
 };
 
 // 📊 SUMMARY
-window.summary = async ()=>{
+window.monthlySummary = async ()=>{
   const snap=await getDocs(collection(db,"attendance"));
   let map={};
 
@@ -282,18 +273,16 @@ window.summary = async ()=>{
     html+=`<tr><td>${n}</td><td>${map[n].t}</td><td>${map[n].l}</td></tr>`;
   }
 
-  sum.innerHTML=html;
+  summary.innerHTML=html;
 };
 
-// 📅 HOLIDAY
+// 📅 ADD HOLIDAY
 window.addHoliday = async ()=>{
-  if(adminPin.value!==ADMIN_PIN){
-    alert("Wrong PIN"); return;
-  }
+  const date = prompt("Enter date exactly (e.g. Wed Apr 30 2026)");
+  if(!date) return;
 
-  const d=prompt("Enter date (e.g. May 1 2026)");
-  await addDoc(collection(db,"holidays"),{date:d});
-  alert("Holiday Added");
+  await addDoc(collection(db,"holidays"),{date});
+  alert("Holiday added");
 };
 
 </script>
