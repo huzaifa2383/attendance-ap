@@ -1,47 +1,48 @@
 <!DOCTYPE html>
-
 <html>
 <head>
   <title>Madrasa Smart Attendance</title>
-
-  <!-- Leaflet Map -->
-
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-  <style>
-    body { font-family: Arial; text-align:center; }
-    input, select, button { padding:10px; margin:5px; }
-    table { border-collapse: collapse; width:90%; margin:auto; }
-    th, td { border:1px solid #ccc; padding:8px; }
-    #map { height:300px; margin:10px; }
-  </style>
-
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 
-<body>
+<body style="font-family:Arial; text-align:center;">
 
 <h2>📍 Madrasa Smart Attendance</h2>
 
-<select id="teacher"></select><br> <input type="password" id="pin" placeholder="Enter PIN"><br>
+<select id="name">
+  <option value="">Select Name</option>
+  <option>Shk Huzaifa bhai</option>
+  <option>Shk Huzaima bhai</option>
+  <option>Shk Taha bhai</option>
+  <option>Mulla Mohammad bhai</option>
+  <option>Farida ben</option>
+  <option>Arwa ben</option>
+  <option>Rashida ben</option>
+  <option>UmmeSalama ben</option>
+</select>
 
-<button onclick="checkIn()">Check In</button> <button onclick="checkOut()">Check Out</button>
+<br><br>
+
+<input type="password" id="pin" placeholder="Enter PIN">
+
+<br><br>
+
+<button onclick="checkIn()">Check In</button>
+<button onclick="checkOut()">Check Out</button>
 
 <p id="status"></p>
 
-<div id="map"></div>
-
 <hr>
 
-<h3>🔒 Admin Panel</h3>
-<input type="password" id="adminPin" placeholder="Admin PIN"><br>
+<h3>🔐 Admin Panel</h3>
 
-<button onclick="loadData()">Load</button> <button onclick="downloadCSV()">CSV</button> <button onclick="monthlySummary()">Summary</button> <button onclick="addHoliday()">Add Holiday</button>
+<input type="password" id="adminPin" placeholder="Admin PIN">
+<br><br>
 
-<table id="table"></table>
+<button onclick="loadData()">Load Attendance</button>
+<button onclick="downloadCSV()">Download CSV</button>
 
-<h3>📊 Monthly Summary</h3>
-<table id="summary"></table>
+<table border="1" id="table" style="margin:auto; margin-top:20px;"></table>
 
 <script type="module">
 
@@ -64,265 +65,170 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// 🔐 SETTINGS
-const ADMIN_PIN = "1234";
-
-const USER_PINS = {
-  "Shk Huzaifa bhai":"1111",
-  "Shk Khuzaima bhai":"2222",
-  "Shk Taha bhai":"3333",
-  "Mulla Mohammad bhai":"4444",
-  "Farida ben":"5555",
-  "Arwa ben":"6666",
-  "Rashida ben":"7777",
-  "UmmeSalama ben":"8888"
-};
-
-// 📍 LOCATION
 const SCHOOL_LAT = 18.51278;
 const SCHOOL_LNG = 73.87936;
 const RADIUS = 200;
 
-// fill dropdown
-for(let u in USERS){
-  teacher.innerHTML += `<option>${u}</option>`;
-}
-
-// 🗺 MAP
-let map = L.map('map').setView([SCHOOL_LAT, SCHOOL_LNG], 16);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
-.addTo(map);
-
-// madrasa marker
-const schoolMarker = L.marker([SCHOOL_LAT, SCHOOL_LNG])
-.addTo(map).bindPopup("🏫 Madrasa");
-
-// radius circle
-L.circle([SCHOOL_LAT, SCHOOL_LNG], {
-  radius: RADIUS,
-  color: 'green'
-}).addTo(map);
-
-let userMarker;
-
-let distance = 999;
-
-// 📍 LIVE LOCATION
-navigator.geolocation.watchPosition(pos => {
-
-  const lat = pos.coords.latitude;
-  const lng = pos.coords.longitude;
-  const accuracy = pos.coords.accuracy;
-
-  distance = calc(lat,lng,SCHOOL_LAT,SCHOOL_LNG);
-
-  if(userMarker) map.removeLayer(userMarker);
-
-  userMarker = L.marker([lat,lng])
-    .addTo(map)
-    .bindPopup("📍 You");
-
-  status.innerHTML =
-    `Distance: ${Math.round(distance)}m | Accuracy: ${Math.round(accuracy)}m<br>` +
-    (distance <= RADIUS ? "✅ Inside Area" : "❌ Outside Area");
-
-});
-
-// 📏 DISTANCE
-function calc(a,b,c,d){
-  const R=6371e3;
-  const φ1=a*Math.PI/180, φ2=c*Math.PI/180;
-  const Δφ=(c-a)*Math.PI/180;
-  const Δλ=(d-b)*Math.PI/180;
-
-  const x=Math.sin(Δφ/2)**2 +
-    Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
-
-  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-// ⏰ TIME
-function allowedTime(){
-  const h=new Date().getHours();
-  return h>=16 && h<=22;
-}
-
-// 📅 HOLIDAY
-async function isHoliday(){
-  const today=new Date().toDateString();
-  const snap=await getDocs(collection(db,"holidays"));
-
-  for(const d of snap.docs){
-    if(d.data().date===today) return true;
-  }
-  return false;
-}
-
-// ✅ CHECK IN
-window.checkIn = async ()=>{
-
-  if(await isHoliday()){
-    alert("Holiday"); return;
-  }
-
-  if(distance>RADIUS){
-    alert("Outside area"); return;
-  }
-
-  if(!allowedTime()){
-    alert("Allowed only 4PM–10PM"); return;
-  }
-
-  const name=teacher.value;
-  const pinVal=pin.value;
-
-  if(USERS[name]!==pinVal){
-    alert("Wrong PIN"); return;
-  }
-
-  const today=new Date().toDateString();
-
-  const q=query(collection(db,"attendance"),
-    where("name","==",name),
-    where("date","==",today)
-  );
-
-  const snap=await getDocs(q);
-
-  for(const d of snap.docs){
-    if(!d.data().checkOut){
-      alert("Already checked in"); return;
-    }
-  }
-
-  const now=new Date();
-  const cutoff=new Date();
-  cutoff.setHours(16,50,0);
-
-  const stat = now>cutoff ? "Late" : "On Time";
-
-  await addDoc(collection(db,"attendance"),{
-    name,
-    date:today,
-    checkIn:now.toLocaleTimeString(),
-    checkOut:"",
-    status:stat,
-    dist:Math.round(distance)
-  });
-
-  alert("Checked In");
+const pins = {
+  "Shk Huzaifa bhai": "1111",
+  "Shk Huzaima bhai": "2222",
+  "Shk Taha bhai": "3333",
+  "Mulla Mohammad bhai": "4444",
+  "Farida ben": "5555",
+  "Arwa ben": "6666",
+  "Rashida ben": "7777",
+  "UmmeSalama ben": "8888"
 };
 
-// ✅ CHECK OUT
-window.checkOut = async ()=>{
+const ADMIN_PIN = "9999";
 
-  const name=teacher.value;
-  const today=new Date().toDateString();
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI/180;
+  const dLon = (lon2 - lon1) * Math.PI/180;
+  const a =
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))) * 1000;
+}
 
-  const q=query(collection(db,"attendance"),
-    where("name","==",name),
-    where("date","==",today)
-  );
+function getToday() {
+  return new Date().toDateString();
+}
 
-  const snap=await getDocs(q);
+async function checkIn() {
+  const name = document.getElementById("name").value;
+  const pin = document.getElementById("pin").value;
 
-  if(snap.empty){
-    alert("No check-in found"); return;
+  if (!name || pins[name] !== pin) {
+    alert("Wrong PIN");
+    return;
   }
 
-  for(const d of snap.docs){
-    if(!d.data().checkOut){
-      await updateDoc(doc(db,"attendance",d.id),{
-        checkOut:new Date().toLocaleTimeString()
-      });
-      alert("Checked Out");
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const dist = getDistance(pos.coords.latitude, pos.coords.longitude, SCHOOL_LAT, SCHOOL_LNG);
+
+    if (dist > RADIUS) {
+      document.getElementById("status").innerHTML = "❌ Outside (" + Math.round(dist) + "m)";
       return;
     }
+
+    const today = getToday();
+
+    const q = query(collection(db, "attendance"),
+      where("name", "==", name),
+      where("date", "==", today)
+    );
+
+    const snap = await getDocs(q);
+
+    if (!snap.empty) {
+      alert("Already checked in today");
+      return;
+    }
+
+    const now = new Date();
+    const time = now.toLocaleTimeString();
+
+    const lateTime = new Date();
+    lateTime.setHours(16,50,0);
+
+    const status = now > lateTime ? "Late" : "On Time";
+
+    await addDoc(collection(db, "attendance"), {
+      name,
+      date: today,
+      in: time,
+      out: "",
+      status,
+      dist: Math.round(dist)
+    });
+
+    document.getElementById("status").innerHTML = "✅ Checked In at " + time;
+  });
+}
+
+async function checkOut() {
+  const name = document.getElementById("name").value;
+
+  const today = getToday();
+
+  const q = query(collection(db, "attendance"),
+    where("name", "==", name),
+    where("date", "==", today)
+  );
+
+  const snap = await getDocs(q);
+
+  if (snap.empty) {
+    alert("No check-in found");
+    return;
   }
 
-  alert("Already checked out");
-};
+  const docRef = snap.docs[0];
 
-// 📊 LOAD
-window.loadData = async ()=>{
-
-  if(adminPin.value!==ADMIN_PIN){
-    alert("Wrong PIN"); return;
+  if (docRef.data().out) {
+    alert("Already checked out");
+    return;
   }
 
-  const snap=await getDocs(collection(db,"attendance"));
+  const time = new Date().toLocaleTimeString();
 
-  let html="<tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Dist</th><th>Del</th></tr>";
+  await updateDoc(doc(db, "attendance", docRef.id), {
+    out: time
+  });
 
-  snap.forEach(d=>{
-    const x=d.data();
-    html+=`<tr>
-      <td>${x.name}</td>
-      <td>${x.date}</td>
-      <td>${x.checkIn}</td>
-      <td>${x.checkOut||"-"}</td>
-      <td>${x.status}</td>
-      <td>${x.dist}m</td>
-      <td><button onclick="del('${d.id}')">X</button></td>
+  alert("Checked Out");
+}
+
+async function loadData() {
+  if (document.getElementById("adminPin").value !== ADMIN_PIN) {
+    alert("Wrong admin PIN");
+    return;
+  }
+
+  const snap = await getDocs(collection(db, "attendance"));
+
+  let html = "<tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Dist</th><th>Delete</th></tr>";
+
+  snap.forEach(d => {
+    const data = d.data();
+
+    html += `
+    <tr>
+      <td>${data.name}</td>
+      <td>${data.date}</td>
+      <td>${data.in}</td>
+      <td>${data.out || "-"}</td>
+      <td>${data.status}</td>
+      <td>${data.dist}m</td>
+      <td><button onclick="del('${d.id}')">Delete</button></td>
     </tr>`;
   });
 
-  table.innerHTML=html;
-};
+  document.getElementById("table").innerHTML = html;
+}
 
-// 🗑 DELETE
-window.del = async (id)=>{
-  await deleteDoc(doc(db,"attendance",id));
+window.del = async function(id) {
+  await deleteDoc(doc(db, "attendance", id));
   loadData();
 };
 
-// 📥 CSV
-window.downloadCSV = async ()=>{
-  const snap=await getDocs(collection(db,"attendance"));
+window.downloadCSV = async function() {
+  const snap = await getDocs(collection(db, "attendance"));
+  let csv = "Name,Date,In,Out,Status,Distance\n";
 
-  let csv="Name,Date,In,Out,Status,Distance\n";
-
-  snap.forEach(d=>{
-    const x=d.data();
-    csv+=`${x.name},${x.date},${x.checkIn},${x.checkOut},${x.status},${x.dist}\n`;
+  snap.forEach(d => {
+    const x = d.data();
+    csv += `${x.name},${x.date},${x.in},${x.out},${x.status},${x.dist}\n`;
   });
 
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob([csv]));
-  a.download="attendance.csv";
+  const blob = new Blob([csv]);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "attendance.csv";
   a.click();
-};
-
-// 📊 SUMMARY
-window.monthlySummary = async ()=>{
-  const snap=await getDocs(collection(db,"attendance"));
-
-  let map={};
-
-  snap.forEach(d=>{
-    const x=d.data();
-    if(!map[x.name]) map[x.name]={t:0,l:0};
-    map[x.name].t++;
-    if(x.status==="Late") map[x.name].l++;
-  });
-
-  let html="<tr><th>Name</th><th>Total</th><th>Late</th></tr>";
-
-  for(let n in map){
-    html+=`<tr><td>${n}</td><td>${map[n].t}</td><td>${map[n].l}</td></tr>`;
-  }
-
-  summary.innerHTML=html;
-};
-
-// 📅 HOLIDAY
-window.addHoliday = async ()=>{
-  const date = prompt("Enter date exactly (example: Wed Apr 30 2026)");
-  if(!date) return;
-
-  await addDoc(collection(db,"holidays"),{date});
-  alert("Holiday added");
 };
 
 </script>
