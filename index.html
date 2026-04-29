@@ -8,15 +8,60 @@
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
   <style>
-    body { font-family: Arial; text-align: center; padding: 20px; }
-    button { margin: 5px; padding: 10px; }
-    table { margin: auto; border-collapse: collapse; }
-    td, th { padding: 8px; border: 1px solid #ccc; }
+    body {
+      font-family: Arial;
+      background: #f4f6f8;
+      text-align: center;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      margin: 20px auto;
+      max-width: 400px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+
+    select, input {
+      width: 90%;
+      padding: 10px;
+      margin: 8px;
+    }
+
+    button {
+      padding: 10px 15px;
+      margin: 5px;
+      border: none;
+      border-radius: 6px;
+      background: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #0056b3;
+    }
+
+    table {
+      margin: auto;
+      border-collapse: collapse;
+      width: 95%;
+    }
+
+    th, td {
+      padding: 8px;
+      border: 1px solid #ccc;
+    }
+
+    .late { color: red; font-weight: bold; }
+    .ontime { color: green; font-weight: bold; }
   </style>
 </head>
 
 <body>
 
+<div class="card">
 <h2>Madrasa Attendance</h2>
 
 <select id="teacher">
@@ -31,38 +76,33 @@
 <option>UmmeSalama ben</option>
 </select>
 
-<br><br>
-
 <input type="password" id="pin" placeholder="Enter PIN">
-
-<br><br>
 
 <button onclick="markAttendance()">Check In</button>
 <button onclick="markLeave()">Check Out</button>
 
 <p id="status"></p>
+</div>
 
-<hr>
-
+<div class="card">
 <h3>🔐 Admin Panel</h3>
 
 <input type="password" id="adminPin" placeholder="Admin PIN">
 
-<br><br>
+<br>
 
-<button onclick="loadAttendance()">Load Attendance</button>
-<button onclick="monthlySummary()">Monthly Summary</button>
+<button onclick="loadAttendance()">Load</button>
+<button onclick="monthlySummary()">Summary</button>
+<button onclick="downloadCSV()">Download Excel</button>
 <button onclick="addHoliday()">Add Holiday</button>
 
 <div id="holidays"></div>
-<br>
 <div id="data"></div>
-<br>
 <div id="summary"></div>
+</div>
 
 <script>
 
-// 🔥 YOUR FIREBASE CONFIG (PUT YOUR OWN)
 const firebaseConfig = {
   apiKey: "YOUR_KEY",
   authDomain: "YOUR_DOMAIN",
@@ -72,15 +112,12 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-// 📍 LOCATION
 const SCHOOL_LAT = 18.512606;
 const SCHOOL_LNG = 73.879298;
 const ALLOWED_RADIUS = 50;
 
-// 🔐 ADMIN PIN
 const ADMIN_PIN = "1234";
 
-// 👤 USER PINS
 const pins = {
   "Shk Huzaifa bhai": "1111",
   "Shk Khuzaima bhai": "2222",
@@ -92,7 +129,6 @@ const pins = {
   "UmmeSalama ben": "8888"
 };
 
-// 📏 DISTANCE CALCULATION
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
   const φ1 = lat1 * Math.PI/180;
@@ -108,13 +144,11 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-// 📅 CHECK HOLIDAY
 async function isHoliday(date) {
   const snap = await db.collection("holidays").where("date","==",date).get();
   return !snap.empty;
 }
 
-// ✅ CHECK IN
 async function markAttendance() {
 
   const name = document.getElementById("teacher").value;
@@ -128,7 +162,7 @@ async function markAttendance() {
   const today = new Date().toISOString().split("T")[0];
 
   if (await isHoliday(today)) {
-    alert("Holiday — attendance blocked");
+    alert("Holiday");
     return;
   }
 
@@ -138,7 +172,7 @@ async function markAttendance() {
     .get();
 
   if (!existing.empty) {
-    alert("Already checked in today");
+    alert("Already marked");
     return;
   }
 
@@ -152,34 +186,26 @@ async function markAttendance() {
     );
 
     if (dist > ALLOWED_RADIUS) {
-      document.getElementById("status").innerHTML =
-        "❌ Outside (" + Math.round(dist) + "m)";
+      document.getElementById("status").innerHTML = "❌ Outside (" + Math.round(dist) + "m)";
       return;
     }
 
     const now = new Date();
-
-    const late =
-      now.getHours() > 16 ||
-      (now.getHours() === 16 && now.getMinutes() > 50);
+    const late = now.getHours() > 16 || (now.getHours()==16 && now.getMinutes()>50);
 
     db.collection("attendance").add({
       name,
       date: today,
       checkIn: now.toLocaleTimeString(),
       checkOut: "",
-      status: late ? "Late" : "On Time",
-      distance: Math.round(dist)
+      status: late ? "Late" : "On Time"
     });
 
-    document.getElementById("status").innerHTML =
-      "✅ Checked In (" + Math.round(dist) + "m)";
+    document.getElementById("status").innerHTML = "✅ Checked In";
   });
 }
 
-// 🚪 CHECK OUT
 async function markLeave() {
-
   const name = document.getElementById("teacher").value;
   const today = new Date().toISOString().split("T")[0];
 
@@ -197,7 +223,6 @@ async function markLeave() {
   alert("Checked Out");
 }
 
-// 📋 LOAD ATTENDANCE
 function loadAttendance() {
 
   if (document.getElementById("adminPin").value !== ADMIN_PIN) {
@@ -205,20 +230,21 @@ function loadAttendance() {
     return;
   }
 
-  let html = "<table><tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Dist</th></tr>";
+  let html = "<table><tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th></tr>";
 
   db.collection("attendance").get().then(snap => {
 
     snap.forEach(doc => {
       const d = doc.data();
 
+      const cls = d.status === "Late" ? "late" : "ontime";
+
       html += `<tr>
         <td>${d.name}</td>
         <td>${d.date}</td>
         <td>${d.checkIn}</td>
         <td>${d.checkOut || "-"}</td>
-        <td>${d.status || "-"}</td>
-        <td>${d.distance || "-"}</td>
+        <td class="${cls}">${d.status}</td>
       </tr>`;
     });
 
@@ -229,41 +255,6 @@ function loadAttendance() {
   loadHolidays();
 }
 
-// 📅 ADD HOLIDAY
-function addHoliday() {
-  const date = prompt("Enter date YYYY-MM-DD");
-  const name = prompt("Holiday name");
-
-  if (!date) return;
-
-  db.collection("holidays").add({ date, name });
-}
-
-// 📅 LOAD HOLIDAYS
-function loadHolidays() {
-
-  let html = "<h4>📅 Holidays</h4>";
-
-  db.collection("holidays").get().then(snap => {
-
-    snap.forEach(doc => {
-      const h = doc.data();
-
-      html += `<p>${h.date} - ${h.name}
-      <button onclick="deleteHoliday('${doc.id}')">❌</button></p>`;
-    });
-
-    document.getElementById("holidays").innerHTML = html;
-  });
-}
-
-// ❌ DELETE HOLIDAY
-function deleteHoliday(id) {
-  db.collection("holidays").doc(id).delete();
-  loadHolidays();
-}
-
-// 📊 SUMMARY
 function monthlySummary() {
 
   let summary = {};
@@ -279,25 +270,59 @@ function monthlySummary() {
 
       summary[d.name].total++;
 
-      if (d.status === "Late") {
-        summary[d.name].late++;
-      }
+      if (d.status === "Late") summary[d.name].late++;
     });
 
-    let html = "<h3>📊 Monthly Summary</h3>";
-    html += "<table><tr><th>Name</th><th>Total Days</th><th>Late Days</th></tr>";
+    let html = "<h3>📊 Summary</h3><table><tr><th>Name</th><th>Total</th><th>Late</th></tr>";
 
     for (let name in summary) {
-      html += `<tr>
-        <td>${name}</td>
-        <td>${summary[name].total}</td>
-        <td>${summary[name].late}</td>
-      </tr>`;
+      html += `<tr><td>${name}</td><td>${summary[name].total}</td><td>${summary[name].late}</td></tr>`;
     }
 
     html += "</table>";
-
     document.getElementById("summary").innerHTML = html;
+  });
+}
+
+function addHoliday() {
+  const date = prompt("YYYY-MM-DD");
+  const name = prompt("Name");
+  if (!date) return;
+  db.collection("holidays").add({ date, name });
+}
+
+function loadHolidays() {
+  let html = "<h4>📅 Holidays</h4>";
+
+  db.collection("holidays").get().then(snap => {
+    snap.forEach(doc => {
+      const h = doc.data();
+      html += `<p>${h.date} - ${h.name}</p>`;
+    });
+
+    document.getElementById("holidays").innerHTML = html;
+  });
+}
+
+// 📥 CSV DOWNLOAD
+function downloadCSV() {
+
+  db.collection("attendance").get().then(snap => {
+
+    let csv = "Name,Date,CheckIn,CheckOut,Status\n";
+
+    snap.forEach(doc => {
+      const d = doc.data();
+      csv += `${d.name},${d.date},${d.checkIn},${d.checkOut || ""},${d.status}\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "attendance.csv";
+    a.click();
   });
 }
 
