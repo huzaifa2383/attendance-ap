@@ -1,25 +1,23 @@
 <!DOCTYPE html>
+
 <html>
 <head>
-  <title>Madrasa Attendance</title>
-
+  <title>Madrasa Pro Attendance</title>
   <style>
-    body { font-family: Arial; text-align: center; }
-    select, input, button { padding: 10px; margin: 8px; }
-    #map { height: 300px; width: 90%; margin: auto; }
-    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-    th, td { border: 1px solid #ccc; padding: 8px; }
-    button { cursor: pointer; }
+    body { font-family: Arial; text-align:center; }
+    select,input,button { padding:10px; margin:5px; }
+    table { border-collapse:collapse; width:95%; margin:auto; }
+    th,td { border:1px solid #ccc; padding:8px; }
+    #map { height:200px; }
   </style>
-
 </head>
 
 <body>
 
-<h2>Madrasa Attendance</h2>
+<h2>📍 Madrasa Pro Attendance</h2>
 
-<select id="teacher">
-  <option>Select Name</option>
+<select id="name">
+  <option value="">Select Name</option>
   <option>Shk Huzaifa bhai</option>
   <option>Shk Khuzaima bhai</option>
   <option>Shk Taha bhai</option>
@@ -36,30 +34,33 @@
 
 <br>
 
-<button onclick="checkIn()">Check In</button>
-<button onclick="checkOut()">Check Out</button>
+<button onclick="checkIn()">Check In</button> <button onclick="checkOut()">Check Out</button>
 
 <p id="status"></p>
+
+<div id="map"></div>
 
 <hr>
 
 <h3>🔒 Admin Panel</h3>
-
 <input type="password" id="adminPin" placeholder="Admin PIN">
 
 <br>
 
-<button onclick="loadAttendance()">Load Attendance</button>
-<button onclick="downloadCSV()">Download CSV</button>
-<button onclick="monthlySummary()">Monthly Summary</button>
+<button onclick="loadData()">Load</button> <button onclick="downloadCSV()">CSV</button> <button onclick="summary()">Summary</button> <button onclick="addHoliday()">Add Holiday</button>
 
-<div id="table"></div>
-<div id="summary"></div>
+<table id="data"></table>
 
-<!-- Firebase -->
+<h3>📊 Monthly Summary</h3>
+<table id="sum"></table>
+
 <script type="module">
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where, updateDoc, doc, orderBy, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getFirestore, collection, addDoc, getDocs,
+  query, where, updateDoc, doc, deleteDoc
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyARZZMs4J24iFjLgmLzqqIz2PnwWmosmGg",
@@ -70,219 +71,229 @@ const firebaseConfig = {
   appId: "1:390959800510:web:19a1133e41b55b0ed1beef",
   measurementId: "G-EK7LF2NLVE"
 };
+
+
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// LOCATION
+// 🔐 CONFIG
+const ADMIN_PIN = "7860";
+
+const USER_PINS = {
+  "Shk Huzaifa bhai":"1111",
+  "Shk Khuzaima bhai":"2222",
+  "Shk Taha bhai":"3333",
+  "Mulla Mohammad bhai":"4444",
+  "Farida ben":"5555",
+  "Arwa ben":"6666",
+  "Rashida ben":"7777",
+  "UmmeSalama ben":"8888"
+};
+
+// 📍 LOCATION
 const SCHOOL_LAT = 18.51278;
 const SCHOOL_LNG = 73.87936;
-const ALLOWED_RADIUS = 200; // YOUR UPDATED
+const RADIUS = 50;
 
-// DISTANCE
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371e3;
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1) * Math.PI/180;
-  const Δλ = (lon2-lon1) * Math.PI/180;
+let currentDistance = 999;
 
-  const a = Math.sin(Δφ/2)**2 +
-            Math.cos(φ1)*Math.cos(φ2) *
-            Math.sin(Δλ/2)**2;
+// 📍 LIVE LOCATION
+navigator.geolocation.watchPosition(pos=>{
+  const lat=pos.coords.latitude;
+  const lng=pos.coords.longitude;
 
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+  currentDistance = distance(lat,lng,SCHOOL_LAT,SCHOOL_LNG);
+
+  status.innerHTML =
+    currentDistance<=RADIUS
+    ? "✅ Inside ("+Math.round(currentDistance)+"m)"
+    : "❌ Outside ("+Math.round(currentDistance)+"m)";
+
+  map.innerHTML =
+    `<iframe width="100%" height="200"
+    src="https://maps.google.com/maps?q=${lat},${lng}&z=15&output=embed"></iframe>`;
+});
+
+// 📏 DISTANCE
+function distance(lat1,lon1,lat2,lon2){
+  const R=6371e3;
+  const φ1=lat1*Math.PI/180;
+  const φ2=lat2*Math.PI/180;
+  const Δφ=(lat2-lat1)*Math.PI/180;
+  const Δλ=(lon2-lon1)*Math.PI/180;
+
+  const a=Math.sin(Δφ/2)**2 +
+  Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// PINS
-const pins = {
-  "Shk Huzaifa bhai": "1111",
-  "Shk Khuzaima bhai": "2222",
-  "Shk Taha bhai": "3333",
-  "Mulla Mohammad bhai": "4444",
-  "Farida ben": "5555",
-  "Arwa ben": "6666",
-  "Rashida ben": "7777",
-  "UmmeSalama ben": "8888"
-};
+// ⏰ TIME RULE
+function validTime(){
+  const h=new Date().getHours();
+  return h>=16 && h<=22;
+}
 
-const ADMIN_PIN = "1234";
-
+// 🔐 CHECK PIN
+function checkUserPin(name,pin){
+  return USER_PINS[name]===pin;
+}
 
 // ✅ CHECK IN
-window.checkIn = () => {
-  const name = document.getElementById("teacher").value;
-  const pin = document.getElementById("pin").value;
+window.checkIn = async ()=>{
 
-  if (pins[name] !== pin) return alert("Wrong PIN");
+  const nameVal = name.value;
+  const pinVal = pin.value;
 
-  navigator.geolocation.getCurrentPosition(async pos => {
+  if(!checkUserPin(nameVal,pinVal)){
+    alert("Wrong PIN"); return;
+  }
 
-    const dist = getDistance(
-      pos.coords.latitude,
-      pos.coords.longitude,
-      SCHOOL_LAT,
-      SCHOOL_LNG
-    );
+  if(currentDistance>RADIUS){
+    alert("Outside area"); return;
+  }
 
-    if (dist > ALLOWED_RADIUS) {
-      alert("Outside madrasa (" + Math.round(dist) + "m)");
-      return;
-    }
+  if(!validTime()){
+    alert("Only 4PM–10PM"); return;
+  }
 
-    const today = new Date().toDateString();
+  const today=new Date().toDateString();
 
-    const q = query(collection(db,"attendance"),
-      where("name","==",name),
-      where("date","==",today)
-    );
-
-    const snap = await getDocs(q);
-
-    if (!snap.empty) {
-      alert("Already checked in");
-      return;
-    }
-
-    const now = new Date();
-
-    let status = "On Time";
-    if (now.getHours() > 16 || (now.getHours()==16 && now.getMinutes()>50)) {
-      status = "Late";
-    }
-
-    await addDoc(collection(db,"attendance"), {
-      name,
-      date: today,
-      checkIn: now.toLocaleTimeString(),
-      checkOut: "",
-      status,
-      distance: Math.round(dist),
-      timestamp: new Date()
-    });
-
-    alert("Checked In");
-  });
-};
-
-
-// ✅ CHECK OUT FIXED
-window.checkOut = async () => {
-  const name = document.getElementById("teacher").value;
-  const today = new Date().toDateString();
-
-  const q = query(collection(db,"attendance"),
-    where("name","==",name),
+  const q=query(collection(db,"attendance"),
+    where("name","==",nameVal),
     where("date","==",today)
   );
 
-  const snap = await getDocs(q);
+  const snap=await getDocs(q);
 
-  if (snap.empty) {
-    alert("No check-in found");
-    return;
+  for(const d of snap.docs){
+    if(!d.data().checkOut){
+      alert("Already checked in"); return;
+    }
   }
 
-  snap.forEach(async d => {
-    const data = d.data();
+  const now=new Date();
+  const cutoff=new Date();
+  cutoff.setHours(16,50,0);
 
-    if (data.checkOut) {
-      alert("Already checked out");
-      return;
-    }
+  const statusVal = now>cutoff ? "Late":"On Time";
 
-    await updateDoc(doc(db,"attendance",d.id), {
-      checkOut: new Date().toLocaleTimeString()
-    });
+  await addDoc(collection(db,"attendance"),{
+    name:nameVal,
+    date:today,
+    checkIn:now.toLocaleTimeString(),
+    checkOut:"",
+    status:statusVal,
+    distance:Math.round(currentDistance)
   });
 
-  alert("Checked Out successfully");
+  alert("Checked In");
 };
 
+// ✅ CHECK OUT
+window.checkOut = async ()=>{
 
-// ✅ LOAD + DELETE BUTTON
-window.loadAttendance = async () => {
-  if (document.getElementById("adminPin").value !== ADMIN_PIN) {
-    alert("Wrong admin PIN");
-    return;
+  const nameVal=name.value;
+
+  const today=new Date().toDateString();
+
+  const q=query(collection(db,"attendance"),
+    where("name","==",nameVal),
+    where("date","==",today)
+  );
+
+  const snap=await getDocs(q);
+
+  for(const d of snap.docs){
+    if(!d.data().checkOut){
+      await updateDoc(doc(db,"attendance",d.id),{
+        checkOut:new Date().toLocaleTimeString()
+      });
+      alert("Checked Out");
+      return;
+    }
   }
 
-  const q = query(collection(db,"attendance"), orderBy("timestamp","desc"));
-  const snap = await getDocs(q);
+  alert("No active check-in");
+};
 
-  let html = "<table><tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Dist</th><th>Delete</th></tr>";
+// 📊 LOAD
+window.loadData = async ()=>{
 
-  snap.forEach(docSnap => {
-    const d = docSnap.data();
+  if(adminPin.value!==ADMIN_PIN){
+    alert("Wrong Admin PIN"); return;
+  }
 
-    html += `<tr>
-      <td>${d.name}</td>
-      <td>${d.date}</td>
-      <td>${d.checkIn}</td>
-      <td>${d.checkOut || "-"}</td>
-      <td>${d.status}</td>
-      <td>${d.distance}m</td>
-      <td><button onclick="deleteRecord('${docSnap.id}')">Delete</button></td>
+  const snap=await getDocs(collection(db,"attendance"));
+
+  let html="<tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Dist</th><th>Delete</th></tr>";
+
+  snap.forEach(d=>{
+    const x=d.data();
+    html+=`<tr>
+      <td>${x.name}</td>
+      <td>${x.date}</td>
+      <td>${x.checkIn}</td>
+      <td>${x.checkOut||"-"}</td>
+      <td>${x.status}</td>
+      <td>${x.distance}m</td>
+      <td><button onclick="del('${d.id}')">Delete</button></td>
     </tr>`;
   });
 
-  html += "</table>";
-  document.getElementById("table").innerHTML = html;
+  data.innerHTML=html;
 };
 
-
-// ✅ DELETE FUNCTION
-window.deleteRecord = async (id) => {
-  if (!confirm("Delete this record?")) return;
-
+// 🗑 DELETE
+window.del = async (id)=>{
   await deleteDoc(doc(db,"attendance",id));
-  alert("Deleted");
-
-  loadAttendance(); // refresh
+  loadData();
 };
 
-
-// CSV
-window.downloadCSV = async () => {
-  const snap = await getDocs(collection(db,"attendance"));
-
-  let csv = "Name,Date,CheckIn,CheckOut,Status,Distance\n";
-
-  snap.forEach(doc => {
-    const d = doc.data();
-    csv += `${d.name},${d.date},${d.checkIn},${d.checkOut},${d.status},${d.distance}\n`;
+// 📥 CSV
+window.downloadCSV = async ()=>{
+  const snap=await getDocs(collection(db,"attendance"));
+  let csv="Name,Date,In,Out,Status,Distance\n";
+  snap.forEach(d=>{
+    const x=d.data();
+    csv+=`${x.name},${x.date},${x.checkIn},${x.checkOut},${x.status},${x.distance}\n`;
   });
-
-  const blob = new Blob([csv]);
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "attendance.csv";
+  const blob=new Blob([csv]);
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="attendance.csv";
   a.click();
 };
 
+// 📊 SUMMARY
+window.summary = async ()=>{
+  const snap=await getDocs(collection(db,"attendance"));
+  let map={};
 
-// SUMMARY
-window.monthlySummary = async () => {
-  const snap = await getDocs(collection(db,"attendance"));
-
-  let summary = {};
-
-  snap.forEach(doc => {
-    const d = doc.data();
-
-    if (!summary[d.name]) summary[d.name] = {total:0, late:0};
-
-    summary[d.name].total++;
-    if (d.status==="Late") summary[d.name].late++;
+  snap.forEach(d=>{
+    const x=d.data();
+    if(!map[x.name]) map[x.name]={t:0,l:0};
+    map[x.name].t++;
+    if(x.status==="Late") map[x.name].l++;
   });
 
-  let html = "<h3>Monthly Summary</h3><table><tr><th>Name</th><th>Total</th><th>Late</th></tr>";
-
-  for (let name in summary) {
-    html += `<tr><td>${name}</td><td>${summary[name].total}</td><td>${summary[name].late}</td></tr>`;
+  let html="<tr><th>Name</th><th>Total</th><th>Late</th></tr>";
+  for(let n in map){
+    html+=`<tr><td>${n}</td><td>${map[n].t}</td><td>${map[n].l}</td></tr>`;
   }
 
-  html += "</table>";
-  document.getElementById("summary").innerHTML = html;
+  sum.innerHTML=html;
+};
+
+// 📅 HOLIDAY
+window.addHoliday = async ()=>{
+  if(adminPin.value!==ADMIN_PIN){
+    alert("Wrong PIN"); return;
+  }
+
+  const d=prompt("Enter date (e.g. May 1 2026)");
+  await addDoc(collection(db,"holidays"),{date:d});
+  alert("Holiday Added");
 };
 
 </script>
