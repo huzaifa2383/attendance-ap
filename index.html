@@ -2,12 +2,16 @@
 <html>
 <head>
   <title>Madrasa Attendance</title>
+
   <style>
     body { font-family: Arial; text-align: center; }
     select, input, button { padding: 10px; margin: 8px; }
+    #map { height: 300px; width: 90%; margin: auto; }
     table { border-collapse: collapse; width: 100%; margin-top: 20px; }
     th, td { border: 1px solid #ccc; padding: 8px; }
+    button { cursor: pointer; }
   </style>
+
 </head>
 
 <body>
@@ -48,16 +52,14 @@
 <button onclick="loadAttendance()">Load Attendance</button>
 <button onclick="downloadCSV()">Download CSV</button>
 <button onclick="monthlySummary()">Monthly Summary</button>
-<button onclick="addHoliday()">Add Holiday</button>
 
 <div id="table"></div>
 <div id="summary"></div>
-<div id="holidayList"></div>
 
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, orderBy, updateDoc, doc, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, updateDoc, doc, orderBy, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyARZZMs4J24iFjLgmLzqqIz2PnwWmosmGg",
@@ -68,14 +70,28 @@ const firebaseConfig = {
   appId: "1:390959800510:web:19a1133e41b55b0ed1beef",
   measurementId: "G-EK7LF2NLVE"
 };
-
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// LOCATION (your madrasa)
-const SCHOOL_LAT = 18.51274;
+// LOCATION
+const SCHOOL_LAT = 18.51278;
 const SCHOOL_LNG = 73.87936;
-const ALLOWED_RADIUS = 500;
+const ALLOWED_RADIUS = 200; // YOUR UPDATED
+
+// DISTANCE
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(Δφ/2)**2 +
+            Math.cos(φ1)*Math.cos(φ2) *
+            Math.sin(Δλ/2)**2;
+
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+}
 
 // PINS
 const pins = {
@@ -91,22 +107,8 @@ const pins = {
 
 const ADMIN_PIN = "1234";
 
-// DISTANCE FUNCTION
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371e3;
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1) * Math.PI/180;
-  const Δλ = (lon2-lon1) * Math.PI/180;
 
-  const a = Math.sin(Δφ/2)*Math.sin(Δφ/2) +
-            Math.cos(φ1)*Math.cos(φ2) *
-            Math.sin(Δλ/2)*Math.sin(Δλ/2);
-
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
-}
-
-// CHECK IN
+// ✅ CHECK IN
 window.checkIn = () => {
   const name = document.getElementById("teacher").value;
   const pin = document.getElementById("pin").value;
@@ -114,73 +116,90 @@ window.checkIn = () => {
   if (pins[name] !== pin) return alert("Wrong PIN");
 
   navigator.geolocation.getCurrentPosition(async pos => {
-    const dist = getDistance(pos.coords.latitude, pos.coords.longitude, SCHOOL_LAT, SCHOOL_LNG);
+
+    const dist = getDistance(
+      pos.coords.latitude,
+      pos.coords.longitude,
+      SCHOOL_LAT,
+      SCHOOL_LNG
+    );
 
     if (dist > ALLOWED_RADIUS) {
-      document.getElementById("status").innerText = "❌ Outside (" + Math.round(dist) + "m)";
+      alert("Outside madrasa (" + Math.round(dist) + "m)");
       return;
     }
 
     const today = new Date().toDateString();
 
-    // prevent multiple check-ins
-    const q = query(collection(db, "attendance"),
-      where("name", "==", name),
-      where("date", "==", today)
+    const q = query(collection(db,"attendance"),
+      where("name","==",name),
+      where("date","==",today)
     );
 
     const snap = await getDocs(q);
 
     if (!snap.empty) {
-      alert("Already checked in today");
+      alert("Already checked in");
       return;
     }
 
     const now = new Date();
-    const time = now.toLocaleTimeString();
 
     let status = "On Time";
-    const lateTime = new Date();
-    lateTime.setHours(16,50,0);
+    if (now.getHours() > 16 || (now.getHours()==16 && now.getMinutes()>50)) {
+      status = "Late";
+    }
 
-    if (now > lateTime) status = "Late";
-
-    await addDoc(collection(db, "attendance"), {
-      name, date: today, checkIn: time,
-      checkOut: "", status,
+    await addDoc(collection(db,"attendance"), {
+      name,
+      date: today,
+      checkIn: now.toLocaleTimeString(),
+      checkOut: "",
+      status,
       distance: Math.round(dist),
       timestamp: new Date()
     });
 
-    document.getElementById("status").innerText = "✅ Checked In at " + time;
-
+    alert("Checked In");
   });
 };
 
-// CHECK OUT
+
+// ✅ CHECK OUT FIXED
 window.checkOut = async () => {
   const name = document.getElementById("teacher").value;
-
   const today = new Date().toDateString();
 
-  const q = query(collection(db, "attendance"),
+  const q = query(collection(db,"attendance"),
     where("name","==",name),
     where("date","==",today)
   );
 
   const snap = await getDocs(q);
 
+  if (snap.empty) {
+    alert("No check-in found");
+    return;
+  }
+
   snap.forEach(async d => {
-    const now = new Date().toLocaleTimeString();
-    await updateDoc(doc(db, "attendance", d.id), {
-      checkOut: now
+    const data = d.data();
+
+    if (data.checkOut) {
+      alert("Already checked out");
+      return;
+    }
+
+    await updateDoc(doc(db,"attendance",d.id), {
+      checkOut: new Date().toLocaleTimeString()
     });
   });
 
-  alert("Checked Out");
+  alert("Checked Out successfully");
 };
 
-// LOAD TABLE
+
+// ✅ LOAD + DELETE BUTTON
 window.loadAttendance = async () => {
   if (document.getElementById("adminPin").value !== ADMIN_PIN) {
     alert("Wrong admin PIN");
@@ -190,17 +209,19 @@ window.loadAttendance = async () => {
   const q = query(collection(db,"attendance"), orderBy("timestamp","desc"));
   const snap = await getDocs(q);
 
-  let html = "<table><tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Dist</th></tr>";
+  let html = "<table><tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Dist</th><th>Delete</th></tr>";
 
-  snap.forEach(doc => {
-    const d = doc.data();
+  snap.forEach(docSnap => {
+    const d = docSnap.data();
+
     html += `<tr>
       <td>${d.name}</td>
       <td>${d.date}</td>
       <td>${d.checkIn}</td>
-      <td>${d.checkOut}</td>
+      <td>${d.checkOut || "-"}</td>
       <td>${d.status}</td>
       <td>${d.distance}m</td>
+      <td><button onclick="deleteRecord('${docSnap.id}')">Delete</button></td>
     </tr>`;
   });
 
@@ -208,13 +229,20 @@ window.loadAttendance = async () => {
   document.getElementById("table").innerHTML = html;
 };
 
+
+// ✅ DELETE FUNCTION
+window.deleteRecord = async (id) => {
+  if (!confirm("Delete this record?")) return;
+
+  await deleteDoc(doc(db,"attendance",id));
+  alert("Deleted");
+
+  loadAttendance(); // refresh
+};
+
+
 // CSV
 window.downloadCSV = async () => {
-  if (document.getElementById("adminPin").value !== ADMIN_PIN) {
-    alert("Wrong admin PIN");
-    return;
-  }
-
   const snap = await getDocs(collection(db,"attendance"));
 
   let csv = "Name,Date,CheckIn,CheckOut,Status,Distance\n";
@@ -224,14 +252,15 @@ window.downloadCSV = async () => {
     csv += `${d.name},${d.date},${d.checkIn},${d.checkOut},${d.status},${d.distance}\n`;
   });
 
-  const blob = new Blob([csv], {type:"text/csv"});
+  const blob = new Blob([csv]);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "attendance.csv";
   a.click();
 };
 
-// MONTHLY SUMMARY
+
+// SUMMARY
 window.monthlySummary = async () => {
   const snap = await getDocs(collection(db,"attendance"));
 
@@ -240,12 +269,10 @@ window.monthlySummary = async () => {
   snap.forEach(doc => {
     const d = doc.data();
 
-    if (!summary[d.name]) {
-      summary[d.name] = {total:0, late:0};
-    }
+    if (!summary[d.name]) summary[d.name] = {total:0, late:0};
 
     summary[d.name].total++;
-    if (d.status === "Late") summary[d.name].late++;
+    if (d.status==="Late") summary[d.name].late++;
   });
 
   let html = "<h3>Monthly Summary</h3><table><tr><th>Name</th><th>Total</th><th>Late</th></tr>";
@@ -255,18 +282,7 @@ window.monthlySummary = async () => {
   }
 
   html += "</table>";
-
   document.getElementById("summary").innerHTML = html;
-};
-
-// HOLIDAYS
-window.addHoliday = async () => {
-  const date = prompt("Enter date (YYYY-MM-DD)");
-  const name = prompt("Holiday name");
-
-  await addDoc(collection(db,"holidays"), {date,name});
-
-  alert("Holiday added");
 };
 
 </script>
