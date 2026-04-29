@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Madrasa Attendance</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+
+  <style>
+    body { font-family: Arial; text-align: center; padding: 20px; }
+    select, input, button { padding: 10px; margin: 6px; width: 230px; }
+    table { border-collapse: collapse; margin: auto; width: 95%; }
+    th, td { border: 1px solid #ccc; padding: 8px; }
+  </style>
+</head>
+
+<body>
+
+<h2>Madrasa Attendance</h2>
+
+<select id="teacher">
+  <option value="">Select Name</option>
+  <option>Shk Huzaifa bhai</option>
+  <option>Shk Khuzaima bhai</option>
+  <option>Shk Taha bhai</option>
+  <option>Mulla Mohammad bhai</option>
+  <option>Farida ben</option>
+  <option>Arwa ben</option>
+  <option>Rashida ben</option>
+  <option>UmmeSalama ben</option>
+</select>
+
+<br>
+
+<input type="password" id="pin" placeholder="Enter PIN">
+
+<br>
+
+<button onclick="markAttendance()">Check In</button>
+<button onclick="markLeave()">Check Out</button>
+
+<p id="status"></p>
+
+<hr>
+
+<h3>🔐 Admin Panel</h3>
+
+<input type="password" id="adminPin" placeholder="Admin PIN">
+<br>
+
+<button onclick="loadAttendance()">Load Attendance</button>
+
+<table id="table">
+<tr>
+<th>Name</th>
+<th>Date</th>
+<th>Check In</th>
+<th>Check Out</th>
+<th>Status</th>
+<th>Distance</th>
+</tr>
+</table>
+
+<script>
+
+/* 🔥 YOUR FIREBASE CONFIG */
+const firebaseConfig = {
+  apiKey: "AIzaSyARZZMs4J24iFjLgmLzqqIz2PnwWmosmGg",
+  authDomain: "madrasa-attendance-47e69.firebaseapp.com",
+  projectId: "madrasa-attendance-47e69",
+  storageBucket: "madrasa-attendance-47e69.firebasestorage.app",
+  messagingSenderId: "390959800510",
+  appId: "1:390959800510:web:19a1133e41b55b0ed1beef",
+  measurementId: "G-EK7LF2NLVE"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+/* 🔐 ADMIN PIN */
+const ADMIN_PIN = "1111";
+
+/* 🔑 USER PINS */
+const pins = {
+  "Shk Huzaifa bhai": "1111",
+  "Shk Khuzaima bhai": "2222",
+  "Shk Taha bhai": "3333",
+  "Mulla Mohammad bhai": "4444",
+  "Farida ben": "5555",
+  "Arwa ben": "6666",
+  "Rashida ben": "7777",
+  "UmmeSalama ben": "8888"
+};
+
+/* 📍 LOCATION */
+const SCHOOL_LAT = 18.5126;
+const SCHOOL_LNG = 73.8793;
+const ALLOWED_RADIUS = 80; // strict
+
+/* ⏰ 4:50 PM */
+const LATE_HOUR = 16;
+const LATE_MIN = 50;
+
+/* 📏 DISTANCE */
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI/180;
+  const dLon = (lon2 - lon1) * Math.PI/180;
+
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180) *
+    Math.cos(lat2*Math.PI/180) *
+    Math.sin(dLon/2)**2;
+
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+}
+
+/* ✅ CHECK IN */
+function markAttendance() {
+  const name = teacher.value;
+  const pin = document.getElementById("pin").value;
+  const status = document.getElementById("status");
+
+  if (!name) return status.innerText = "Select name";
+  if (pins[name] !== pin) return status.innerText = "Wrong PIN";
+
+  navigator.geolocation.getCurrentPosition(async pos => {
+
+    const distance = getDistance(
+      pos.coords.latitude,
+      pos.coords.longitude,
+      SCHOOL_LAT,
+      SCHOOL_LNG
+    );
+
+    if (distance > ALLOWED_RADIUS) {
+      status.innerText = "❌ Outside (" + Math.round(distance) + "m)";
+      return;
+    }
+
+    const now = new Date();
+    const today = now.toDateString();
+
+    const existing = await db.collection("attendance")
+      .where("name","==",name)
+      .where("date","==",today)
+      .get();
+
+    if (!existing.empty) {
+      status.innerText = "⚠ Already checked in";
+      return;
+    }
+
+    const late =
+      now.getHours() > LATE_HOUR ||
+      (now.getHours() === LATE_HOUR && now.getMinutes() > LATE_MIN);
+
+    await db.collection("attendance").add({
+      name,
+      date: today,
+      checkIn: now.toLocaleTimeString(),
+      checkOut: "",
+      status: late ? "Late" : "On Time",
+      distance: Math.round(distance)
+    });
+
+    status.innerText = "✅ Checked In";
+
+  }, () => {
+    status.innerText = "Location error ❌";
+  });
+}
+
+/* 🚪 CHECK OUT */
+async function markLeave() {
+  const name = teacher.value;
+  const pin = document.getElementById("pin").value;
+  const status = document.getElementById("status");
+
+  if (pins[name] !== pin) return status.innerText = "Wrong PIN";
+
+  const today = new Date().toDateString();
+
+  const snap = await db.collection("attendance")
+    .where("name","==",name)
+    .where("date","==",today)
+    .get();
+
+  if (snap.empty) {
+    status.innerText = "❌ Check-in first";
+    return;
+  }
+
+  const doc = snap.docs[0];
+
+  if (doc.data().checkOut) {
+    status.innerText = "⚠ Already checked out";
+    return;
+  }
+
+  await doc.ref.update({
+    checkOut: new Date().toLocaleTimeString()
+  });
+
+  status.innerText = "✅ Checked Out";
+}
+
+/* 📋 LOAD */
+async function loadAttendance() {
+  if (adminPin.value !== ADMIN_PIN) return alert("Wrong PIN");
+
+  const table = document.getElementById("table");
+  table.innerHTML = table.rows[0].outerHTML;
+
+  const snap = await db.collection("attendance").get();
+
+  snap.forEach(doc => {
+    const d = doc.data();
+
+    table.innerHTML += `
+      <tr>
+        <td>${d.name}</td>
+        <td>${d.date}</td>
+        <td>${d.checkIn}</td>
+        <td>${d.checkOut || "-"}</td>
+        <td>${d.status}</td>
+        <td>${d.distance || "-"}</td>
+      </tr>`;
+  });
+}
+
+</script>
+
+</body>
+</html>
