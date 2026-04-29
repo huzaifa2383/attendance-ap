@@ -2,25 +2,33 @@
 
 <html>
 <head>
-  <title>Madrasa Pro Attendance</title>
+  <title>Madrasa Smart Attendance</title>
+
+  <!-- Leaflet Map -->
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
   <style>
     body { font-family: Arial; text-align:center; }
     input, select, button { padding:10px; margin:5px; }
     table { border-collapse: collapse; width:90%; margin:auto; }
     th, td { border:1px solid #ccc; padding:8px; }
-    #map { height:200px; margin:10px; }
+    #map { height:300px; margin:10px; }
   </style>
+
 </head>
 
 <body>
 
-<h2>📍 Madrasa Attendance PRO</h2>
+<h2>📍 Madrasa Smart Attendance</h2>
 
 <select id="teacher"></select><br> <input type="password" id="pin" placeholder="Enter PIN"><br>
 
 <button onclick="checkIn()">Check In</button> <button onclick="checkOut()">Check Out</button>
 
 <p id="status"></p>
+
 <div id="map"></div>
 
 <hr>
@@ -56,45 +64,69 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// 🔐 CONFIG
+// 🔐 SETTINGS
 const ADMIN_PIN = "1234";
 
-const USERS = {
-  "Shk Huzaifa bhai": "1111",
-  "Shk Khuzaima bhai": "2222",
-  "Shk Taha bhai": "3333",
-  "Mulla Mohammad bhai": "4444",
-  "Farida ben": "5555",
-  "Arwa ben": "6666",
-  "Rashida ben": "7777",
-  "UmmeSalama ben": "8888"
+const USER_PINS = {
+  "Shk Huzaifa bhai":"1111",
+  "Shk Khuzaima bhai":"2222",
+  "Shk Taha bhai":"3333",
+  "Mulla Mohammad bhai":"4444",
+  "Farida ben":"5555",
+  "Arwa ben":"6666",
+  "Rashida ben":"7777",
+  "UmmeSalama ben":"8888"
 };
 
 // 📍 LOCATION
 const SCHOOL_LAT = 18.51278;
 const SCHOOL_LNG = 73.87936;
-const RADIUS = 100;
+const RADIUS = 200;
 
-let distance = 999;
-
-// load names
+// fill dropdown
 for(let u in USERS){
   teacher.innerHTML += `<option>${u}</option>`;
 }
 
-// 📍 GPS
-navigator.geolocation.watchPosition(pos=>{
+// 🗺 MAP
+let map = L.map('map').setView([SCHOOL_LAT, SCHOOL_LNG], 16);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+.addTo(map);
+
+// madrasa marker
+const schoolMarker = L.marker([SCHOOL_LAT, SCHOOL_LNG])
+.addTo(map).bindPopup("🏫 Madrasa");
+
+// radius circle
+L.circle([SCHOOL_LAT, SCHOOL_LNG], {
+  radius: RADIUS,
+  color: 'green'
+}).addTo(map);
+
+let userMarker;
+
+let distance = 999;
+
+// 📍 LIVE LOCATION
+navigator.geolocation.watchPosition(pos => {
+
   const lat = pos.coords.latitude;
   const lng = pos.coords.longitude;
+  const accuracy = pos.coords.accuracy;
 
   distance = calc(lat,lng,SCHOOL_LAT,SCHOOL_LNG);
 
-  status.innerHTML =
-    distance<=RADIUS ? `✅ Inside (${Math.round(distance)}m)` :
-                       `❌ Outside (${Math.round(distance)}m)`;
+  if(userMarker) map.removeLayer(userMarker);
 
-  map.innerHTML = `<iframe width="100%" height="200"
-    src="https://maps.google.com/maps?q=${lat},${lng}&z=15&output=embed"></iframe>`;
+  userMarker = L.marker([lat,lng])
+    .addTo(map)
+    .bindPopup("📍 You");
+
+  status.innerHTML =
+    `Distance: ${Math.round(distance)}m | Accuracy: ${Math.round(accuracy)}m<br>` +
+    (distance <= RADIUS ? "✅ Inside Area" : "❌ Outside Area");
+
 });
 
 // 📏 DISTANCE
@@ -116,10 +148,11 @@ function allowedTime(){
   return h>=16 && h<=22;
 }
 
-// 📅 HOLIDAY CHECK
+// 📅 HOLIDAY
 async function isHoliday(){
   const today=new Date().toDateString();
   const snap=await getDocs(collection(db,"holidays"));
+
   for(const d of snap.docs){
     if(d.data().date===today) return true;
   }
@@ -130,7 +163,7 @@ async function isHoliday(){
 window.checkIn = async ()=>{
 
   if(await isHoliday()){
-    alert("Holiday!"); return;
+    alert("Holiday"); return;
   }
 
   if(distance>RADIUS){
@@ -138,7 +171,7 @@ window.checkIn = async ()=>{
   }
 
   if(!allowedTime()){
-    alert("Only 4–10 PM"); return;
+    alert("Allowed only 4PM–10PM"); return;
   }
 
   const name=teacher.value;
@@ -194,6 +227,10 @@ window.checkOut = async ()=>{
 
   const snap=await getDocs(q);
 
+  if(snap.empty){
+    alert("No check-in found"); return;
+  }
+
   for(const d of snap.docs){
     if(!d.data().checkOut){
       await updateDoc(doc(db,"attendance",d.id),{
@@ -204,14 +241,14 @@ window.checkOut = async ()=>{
     }
   }
 
-  alert("No check-in found");
+  alert("Already checked out");
 };
 
 // 📊 LOAD
 window.loadData = async ()=>{
 
   if(adminPin.value!==ADMIN_PIN){
-    alert("Wrong Admin PIN"); return;
+    alert("Wrong PIN"); return;
   }
 
   const snap=await getDocs(collection(db,"attendance"));
@@ -243,6 +280,7 @@ window.del = async (id)=>{
 // 📥 CSV
 window.downloadCSV = async ()=>{
   const snap=await getDocs(collection(db,"attendance"));
+
   let csv="Name,Date,In,Out,Status,Distance\n";
 
   snap.forEach(d=>{
@@ -259,6 +297,7 @@ window.downloadCSV = async ()=>{
 // 📊 SUMMARY
 window.monthlySummary = async ()=>{
   const snap=await getDocs(collection(db,"attendance"));
+
   let map={};
 
   snap.forEach(d=>{
@@ -269,6 +308,7 @@ window.monthlySummary = async ()=>{
   });
 
   let html="<tr><th>Name</th><th>Total</th><th>Late</th></tr>";
+
   for(let n in map){
     html+=`<tr><td>${n}</td><td>${map[n].t}</td><td>${map[n].l}</td></tr>`;
   }
@@ -276,9 +316,9 @@ window.monthlySummary = async ()=>{
   summary.innerHTML=html;
 };
 
-// 📅 ADD HOLIDAY
+// 📅 HOLIDAY
 window.addHoliday = async ()=>{
-  const date = prompt("Enter date exactly (e.g. Wed Apr 30 2026)");
+  const date = prompt("Enter date exactly (example: Wed Apr 30 2026)");
   if(!date) return;
 
   await addDoc(collection(db,"holidays"),{date});
