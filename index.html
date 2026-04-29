@@ -1,57 +1,94 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Madrasa Smart Attendance</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <title>Madrasa Smart Attendance + Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    :root { --primary: #2c3e50; --success: #27ae60; --info: #2980b9; --bg: #f0f2f5; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: var(--bg); margin: 0; padding: 15px; color: #333; }
+    .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+    
+    h2, h3 { color: var(--primary); margin-top: 0; }
+    select, input { width: 100%; padding: 12px; margin: 8px 0; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+    
+    .btn-group { display: flex; gap: 10px; }
+    button { flex: 1; padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; transition: 0.3s; margin-bottom: 5px; }
+    
+    .btn-in { background: var(--success); color: white; }
+    .btn-out { background: var(--info); color: white; }
+    .btn-admin { background: var(--primary); color: white; width: 100%; }
+    button:hover { opacity: 0.8; }
+
+    #status { font-weight: bold; padding: 10px; border-radius: 5px; margin: 10px 0; }
+    .scroll-table { overflow-x: auto; margin-top: 15px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { border: 1px solid #eee; padding: 10px; text-align: left; }
+    th { background: #f8f9fa; }
+
+    #map { height: 350px; width: 100%; margin-top: 20px; border-radius: 12px; border: 2px solid #ddd; display: none; }
+    hr { margin: 25px 0; border: 0; border-top: 1px solid #eee; }
+  </style>
 </head>
 
-<body style="font-family:Arial; text-align:center;">
+<body>
 
-<h2>📍 Madrasa Smart Attendance</h2>
+<div class="container">
+  <h2>📍 Madrasa Smart Attendance</h2>
+  
+  <select id="name">
+    <option value="">Select Your Name</option>
+    <option>Shk Huzaifa bhai</option>
+    <option>Shk Huzaima bhai</option>
+    <option>Shk Taha bhai</option>
+    <option>Mulla Mohammad bhai</option>
+    <option>Farida ben</option>
+    <option>Arwa ben</option>
+    <option>Rashida ben</option>
+    <option>UmmeSalama ben</option>
+  </select>
 
-<select id="name">
-  <option value="">Select Name</option>
-  <option>Shk Huzaifa bhai</option>
-  <option>Shk Huzaima bhai</option>
-  <option>Shk Taha bhai</option>
-  <option>Mulla Mohammad bhai</option>
-  <option>Farida ben</option>
-  <option>Arwa ben</option>
-  <option>Rashida ben</option>
-  <option>UmmeSalama ben</option>
-</select>
+  <input type="password" id="pin" placeholder="Enter Personal PIN">
 
-<br><br>
+  <div class="btn-group">
+    <button class="btn-in" onclick="checkIn()">Check In</button>
+    <button class="btn-out" onclick="checkOut()">Check Out</button>
+  </div>
 
-<input type="password" id="pin" placeholder="Enter PIN">
+  <p id="status"></p>
 
-<br><br>
+  <hr>
 
-<button onclick="checkIn()">Check In</button>
-<button onclick="checkOut()">Check Out</button>
+  <h3>🔐 Admin Panel</h3>
+  <input type="password" id="adminPin" placeholder="Enter Admin PIN">
+  
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+    <button class="btn-admin" onclick="loadData()">View Attendance</button>
+    <button class="btn-admin" onclick="showMap()">Show Map View</button>
+    <button class="btn-admin" onclick="downloadCSV()">CSV Export</button>
+    <button class="btn-admin" onclick="addHoliday()">Add Holiday</button>
+  </div>
 
-<p id="status"></p>
+  <div id="map"></div>
 
-<hr>
+  <div class="scroll-table">
+    <table id="table"></table>
+  </div>
 
-<h3>🔐 Admin Panel</h3>
-
-<input type="password" id="adminPin" placeholder="Admin PIN">
-<br><br>
-
-<button onclick="loadData()">Load Attendance</button>
-<button onclick="downloadCSV()">Download CSV</button>
-
-<table border="1" id="table" style="margin:auto; margin-top:20px;"></table>
+  <div class="scroll-table">
+    <table id="holidayTable"></table>
+  </div>
+</div>
 
 <script type="module">
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {
-  getFirestore, collection, addDoc, getDocs,
-  query, where, updateDoc, doc, deleteDoc
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, updateDoc, doc, deleteDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+// --- CONFIGURATION ---
 const firebaseConfig = {
   apiKey: "AIzaSyARZZMs4J24iFjLgmLzqqIz2PnwWmosmGg",
   authDomain: "madrasa-attendance-47e69.firebaseapp.com",
@@ -61,177 +98,140 @@ const firebaseConfig = {
   appId: "1:390959800510:web:19a1133e41b55b0ed1beef",
   measurementId: "G-EK7LF2NLVE"
 };
-
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const SCHOOL_LAT = 18.51278;
+const SCHOOL_LAT = 18.51278; 
 const SCHOOL_LNG = 73.87936;
-const RADIUS = 200;
-
-const pins = {
-  "Shk Huzaifa bhai": "1111",
-  "Shk Huzaima bhai": "2222",
-  "Shk Taha bhai": "3333",
-  "Mulla Mohammad bhai": "4444",
-  "Farida ben": "5555",
-  "Arwa ben": "6666",
-  "Rashida ben": "7777",
-  "UmmeSalama ben": "8888"
-};
-
+const RADIUS = 200; 
 const ADMIN_PIN = "9999";
 
+const pins = {
+  "Shk Huzaifa bhai": "1111", "Shk Huzaima bhai": "2222", "Shk Taha bhai": "3333",
+  "Mulla Mohammad bhai": "4444", "Farida ben": "5555", "Arwa ben": "6666",
+  "Rashida ben": "7777", "UmmeSalama ben": "8888"
+};
+
+let map;
+
+// --- UTILITIES ---
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI/180;
   const dLon = (lon2 - lon1) * Math.PI/180;
-  const a =
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))) * 1000;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1000;
 }
 
-function getToday() {
-  return new Date().toDateString();
-}
+const today = () => new Date().toDateString();
 
-async function checkIn() {
+// --- MAIN FUNCTIONS ---
+window.checkIn = async function() {
   const name = document.getElementById("name").value;
   const pin = document.getElementById("pin").value;
+  const statusEl = document.getElementById("status");
 
-  if (!name || pins[name] !== pin) {
-    alert("Wrong PIN");
-    return;
-  }
+  if (!name || pins[name] !== pin) { alert("Wrong Name or PIN"); return; }
+
+  statusEl.innerHTML = "⌛ Verifying location...";
 
   navigator.geolocation.getCurrentPosition(async pos => {
-    const dist = getDistance(pos.coords.latitude, pos.coords.longitude, SCHOOL_LAT, SCHOOL_LNG);
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    const dist = getDistance(lat, lng, SCHOOL_LAT, SCHOOL_LNG);
 
     if (dist > RADIUS) {
-      document.getElementById("status").innerHTML = "❌ Outside (" + Math.round(dist) + "m)";
+      statusEl.style.color = "red";
+      statusEl.innerHTML = `❌ Outside Boundary (${Math.round(dist)}m)`;
       return;
     }
 
-    const today = getToday();
-
-    const q = query(collection(db, "attendance"),
-      where("name", "==", name),
-      where("date", "==", today)
-    );
-
+    const q = query(collection(db, "attendance"), where("name","==",name), where("date","==",today()));
     const snap = await getDocs(q);
-
-    if (!snap.empty) {
-      alert("Already checked in today");
-      return;
-    }
+    if (!snap.empty) { alert("Already checked in today"); return; }
 
     const now = new Date();
-    const time = now.toLocaleTimeString();
-
-    const lateTime = new Date();
-    lateTime.setHours(16,50,0);
-
+    const lateTime = new Date(); lateTime.setHours(16,50,0);
     const status = now > lateTime ? "Late" : "On Time";
 
     await addDoc(collection(db, "attendance"), {
-      name,
-      date: today,
-      in: time,
-      out: "",
-      status,
-      dist: Math.round(dist)
+      name, date: today(), in: now.toLocaleTimeString(), out: "", 
+      status, dist: Math.round(dist), lat, lng, timestamp: Date.now()
     });
 
-    document.getElementById("status").innerHTML = "✅ Checked In at " + time;
+    statusEl.style.color = "green";
+    statusEl.innerHTML = `✅ Checked In at ${now.toLocaleTimeString()}`;
+  }, () => {
+    alert("Please enable GPS/Location Access");
   });
 }
 
-async function checkOut() {
+window.checkOut = async function() {
   const name = document.getElementById("name").value;
-
-  const today = getToday();
-
-  const q = query(collection(db, "attendance"),
-    where("name", "==", name),
-    where("date", "==", today)
-  );
-
+  const q = query(collection(db, "attendance"), where("name","==",name), where("date","==",today()));
   const snap = await getDocs(q);
 
-  if (snap.empty) {
-    alert("No check-in found");
-    return;
-  }
+  if (snap.empty) { alert("No check-in found for today"); return; }
+  const d = snap.docs[0];
+  if (d.data().out) { alert("Already checked out"); return; }
 
-  const docRef = snap.docs[0];
-
-  if (docRef.data().out) {
-    alert("Already checked out");
-    return;
-  }
-
-  const time = new Date().toLocaleTimeString();
-
-  await updateDoc(doc(db, "attendance", docRef.id), {
-    out: time
-  });
-
-  alert("Checked Out");
+  await updateDoc(doc(db, "attendance", d.id), { out: new Date().toLocaleTimeString() });
+  alert("Checked Out successfully");
 }
 
-async function loadData() {
-  if (document.getElementById("adminPin").value !== ADMIN_PIN) {
-    alert("Wrong admin PIN");
-    return;
-  }
-
-  const snap = await getDocs(collection(db, "attendance"));
-
-  let html = "<tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Dist</th><th>Delete</th></tr>";
-
+window.loadData = async function() {
+  if (document.getElementById("adminPin").value !== ADMIN_PIN) { alert("Unauthorized"); return; }
+  const snap = await getDocs(query(collection(db, "attendance"), orderBy("timestamp", "desc")));
+  let html = "<tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Del</th></tr>";
   snap.forEach(d => {
-    const data = d.data();
-
-    html += `
-    <tr>
-      <td>${data.name}</td>
-      <td>${data.date}</td>
-      <td>${data.in}</td>
-      <td>${data.out || "-"}</td>
-      <td>${data.status}</td>
-      <td>${data.dist}m</td>
-      <td><button onclick="del('${d.id}')">Delete</button></td>
-    </tr>`;
+    const x = d.data();
+    html += `<tr><td>${x.name}</td><td>${x.date}</td><td>${x.in}</td><td>${x.out || "-"}</td><td>${x.status}</td>
+    <td><button onclick="del('${d.id}')">❌</button></td></tr>`;
   });
-
   document.getElementById("table").innerHTML = html;
 }
 
-window.del = async function(id) {
-  await deleteDoc(doc(db, "attendance", id));
-  loadData();
-};
+window.showMap = async function() {
+  if (document.getElementById("adminPin").value !== ADMIN_PIN) { alert("Unauthorized"); return; }
+  const mapDiv = document.getElementById("map");
+  mapDiv.style.display = "block";
 
-window.downloadCSV = async function() {
-  const snap = await getDocs(collection(db, "attendance"));
-  let csv = "Name,Date,In,Out,Status,Distance\n";
+  if (!map) {
+    map = L.map('map').setView([SCHOOL_LAT, SCHOOL_LNG], 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    L.circle([SCHOOL_LAT, SCHOOL_LNG], { color: 'green', radius: RADIUS }).addTo(map).bindPopup("Madrasa");
+  }
 
+  const snap = await getDocs(query(collection(db, "attendance"), where("date", "==", today())));
   snap.forEach(d => {
     const x = d.data();
-    csv += `${x.name},${x.date},${x.in},${x.out},${x.status},${x.dist}\n`;
+    if(x.lat) L.marker([x.lat, x.lng]).addTo(map).bindPopup(`${x.name} (${x.in})`);
   });
+}
 
-  const blob = new Blob([csv]);
+window.del = async (id) => { if(confirm("Delete this record?")) { await deleteDoc(doc(db,"attendance",id)); loadData(); } };
+
+window.downloadCSV = async function() {
+  const snap = await getDocs(collection(db,"attendance"));
+  let csv = "Name,Date,In,Out,Status\n";
+  snap.forEach(d => { const x = d.data(); csv += `${x.name},${x.date},${x.in},${x.out},${x.status}\n`; });
+  const blob = new Blob([csv], { type: 'text/csv' });
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "attendance.csv";
-  a.click();
+  a.href = URL.createObjectURL(blob); a.download = "attendance.csv"; a.click();
+};
+
+window.addHoliday = async function() {
+  const date = prompt("Enter Holiday (e.g. 15 Aug 2024)");
+  if (date) { await addDoc(collection(db,"holidays"),{date}); loadHolidays(); }
+};
+
+window.loadHolidays = async function() {
+  const snap = await getDocs(collection(db,"holidays"));
+  let html = "<tr><th>Holiday Date</th></tr>";
+  snap.forEach(d => { html += `<tr><td>${d.data().date}</td></tr>`; });
+  document.getElementById("holidayTable").innerHTML = html;
 };
 
 </script>
-
 </body>
 </html>
