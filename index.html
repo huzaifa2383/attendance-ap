@@ -2,16 +2,16 @@
 <html>
 <head>
   <title>Madrasa Attendance</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
   <style>
     body { font-family: Arial; text-align: center; padding: 20px; }
-    select, input, button { padding: 10px; margin: 6px; width: 230px; }
-    table { border-collapse: collapse; margin: auto; width: 95%; }
-    th, td { border: 1px solid #ccc; padding: 8px; }
+    button { margin: 5px; padding: 10px; }
+    table { margin: auto; border-collapse: collapse; }
+    td, th { padding: 8px; border: 1px solid #ccc; }
   </style>
 </head>
 
@@ -20,22 +20,22 @@
 <h2>Madrasa Attendance</h2>
 
 <select id="teacher">
-  <option value="">Select Name</option>
-  <option>Shk Huzaifa bhai</option>
-  <option>Shk Khuzaima bhai</option>
-  <option>Shk Taha bhai</option>
-  <option>Mulla Mohammad bhai</option>
-  <option>Farida ben</option>
-  <option>Arwa ben</option>
-  <option>Rashida ben</option>
-  <option>UmmeSalama ben</option>
+<option>Select Name</option>
+<option>Shk Huzaifa bhai</option>
+<option>Shk Khuzaima bhai</option>
+<option>Shk Taha bhai</option>
+<option>Mulla Mohammad bhai</option>
+<option>Farida ben</option>
+<option>Arwa ben</option>
+<option>Rashida ben</option>
+<option>UmmeSalama ben</option>
 </select>
 
-<br>
+<br><br>
 
 <input type="password" id="pin" placeholder="Enter PIN">
 
-<br>
+<br><br>
 
 <button onclick="markAttendance()">Check In</button>
 <button onclick="markLeave()">Check Out</button>
@@ -47,40 +47,40 @@
 <h3>🔐 Admin Panel</h3>
 
 <input type="password" id="adminPin" placeholder="Admin PIN">
-<br>
+
+<br><br>
 
 <button onclick="loadAttendance()">Load Attendance</button>
+<button onclick="monthlySummary()">Monthly Summary</button>
+<button onclick="addHoliday()">Add Holiday</button>
 
-<table id="table">
-<tr>
-<th>Name</th>
-<th>Date</th>
-<th>Check In</th>
-<th>Check Out</th>
-<th>Status</th>
-<th>Distance</th>
-</tr>
-</table>
+<div id="holidays"></div>
+<br>
+<div id="data"></div>
+<br>
+<div id="summary"></div>
 
 <script>
 
-/* 🔥 YOUR FIREBASE CONFIG */
+// 🔥 YOUR FIREBASE CONFIG (PUT YOUR OWN)
 const firebaseConfig = {
-  apiKey: "AIzaSyARZZMs4J24iFjLgmLzqqIz2PnwWmosmGg",
-  authDomain: "madrasa-attendance-47e69.firebaseapp.com",
-  projectId: "madrasa-attendance-47e69",
-  storageBucket: "madrasa-attendance-47e69.firebasestorage.app",
-  messagingSenderId: "390959800510",
-  appId: "1:390959800510:web:19a1133e41b55b0ed1beef",
-  measurementId: "G-EK7LF2NLVE"
+  apiKey: "YOUR_KEY",
+  authDomain: "YOUR_DOMAIN",
+  projectId: "YOUR_PROJECT"
 };
+
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-/* 🔐 ADMIN PIN */
-const ADMIN_PIN = "1111";
+// 📍 LOCATION
+const SCHOOL_LAT = 18.512606;
+const SCHOOL_LNG = 73.879298;
+const ALLOWED_RADIUS = 50;
 
-/* 🔑 USER PINS */
+// 🔐 ADMIN PIN
+const ADMIN_PIN = "1234";
+
+// 👤 USER PINS
 const pins = {
   "Shk Huzaifa bhai": "1111",
   "Shk Khuzaima bhai": "2222",
@@ -92,141 +92,212 @@ const pins = {
   "UmmeSalama ben": "8888"
 };
 
-/* 📍 LOCATION */
-const SCHOOL_LAT = 18.5126;
-const SCHOOL_LNG = 73.8793;
-const ALLOWED_RADIUS = 80; // strict
-
-/* ⏰ 4:50 PM */
-const LATE_HOUR = 16;
-const LATE_MIN = 50;
-
-/* 📏 DISTANCE */
+// 📏 DISTANCE CALCULATION
 function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI/180;
-  const dLon = (lon2 - lon1) * Math.PI/180;
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
 
-  const a =
-    Math.sin(dLat/2)**2 +
-    Math.cos(lat1*Math.PI/180) *
-    Math.cos(lat2*Math.PI/180) *
-    Math.sin(dLon/2)**2;
+  const a = Math.sin(Δφ/2)**2 +
+            Math.cos(φ1)*Math.cos(φ2) *
+            Math.sin(Δλ/2)**2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+  return R * c;
 }
 
-/* ✅ CHECK IN */
-function markAttendance() {
-  const name = teacher.value;
+// 📅 CHECK HOLIDAY
+async function isHoliday(date) {
+  const snap = await db.collection("holidays").where("date","==",date).get();
+  return !snap.empty;
+}
+
+// ✅ CHECK IN
+async function markAttendance() {
+
+  const name = document.getElementById("teacher").value;
   const pin = document.getElementById("pin").value;
-  const status = document.getElementById("status");
 
-  if (!name) return status.innerText = "Select name";
-  if (pins[name] !== pin) return status.innerText = "Wrong PIN";
+  if (!pins[name] || pins[name] !== pin) {
+    alert("Wrong PIN");
+    return;
+  }
 
-  navigator.geolocation.getCurrentPosition(async pos => {
+  const today = new Date().toISOString().split("T")[0];
 
-    const distance = getDistance(
+  if (await isHoliday(today)) {
+    alert("Holiday — attendance blocked");
+    return;
+  }
+
+  const existing = await db.collection("attendance")
+    .where("name","==",name)
+    .where("date","==",today)
+    .get();
+
+  if (!existing.empty) {
+    alert("Already checked in today");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(pos => {
+
+    const dist = getDistance(
       pos.coords.latitude,
       pos.coords.longitude,
       SCHOOL_LAT,
       SCHOOL_LNG
     );
 
-    if (distance > ALLOWED_RADIUS) {
-      status.innerText = "❌ Outside (" + Math.round(distance) + "m)";
+    if (dist > ALLOWED_RADIUS) {
+      document.getElementById("status").innerHTML =
+        "❌ Outside (" + Math.round(dist) + "m)";
       return;
     }
 
     const now = new Date();
-    const today = now.toDateString();
-
-    const existing = await db.collection("attendance")
-      .where("name","==",name)
-      .where("date","==",today)
-      .get();
-
-    if (!existing.empty) {
-      status.innerText = "⚠ Already checked in";
-      return;
-    }
 
     const late =
-      now.getHours() > LATE_HOUR ||
-      (now.getHours() === LATE_HOUR && now.getMinutes() > LATE_MIN);
+      now.getHours() > 16 ||
+      (now.getHours() === 16 && now.getMinutes() > 50);
 
-    await db.collection("attendance").add({
+    db.collection("attendance").add({
       name,
       date: today,
       checkIn: now.toLocaleTimeString(),
       checkOut: "",
       status: late ? "Late" : "On Time",
-      distance: Math.round(distance)
+      distance: Math.round(dist)
     });
 
-    status.innerText = "✅ Checked In";
-
-  }, () => {
-    status.innerText = "Location error ❌";
+    document.getElementById("status").innerHTML =
+      "✅ Checked In (" + Math.round(dist) + "m)";
   });
 }
 
-/* 🚪 CHECK OUT */
+// 🚪 CHECK OUT
 async function markLeave() {
-  const name = teacher.value;
-  const pin = document.getElementById("pin").value;
-  const status = document.getElementById("status");
 
-  if (pins[name] !== pin) return status.innerText = "Wrong PIN";
-
-  const today = new Date().toDateString();
+  const name = document.getElementById("teacher").value;
+  const today = new Date().toISOString().split("T")[0];
 
   const snap = await db.collection("attendance")
     .where("name","==",name)
     .where("date","==",today)
     .get();
 
-  if (snap.empty) {
-    status.innerText = "❌ Check-in first";
-    return;
-  }
-
-  const doc = snap.docs[0];
-
-  if (doc.data().checkOut) {
-    status.innerText = "⚠ Already checked out";
-    return;
-  }
-
-  await doc.ref.update({
-    checkOut: new Date().toLocaleTimeString()
+  snap.forEach(doc => {
+    db.collection("attendance").doc(doc.id).update({
+      checkOut: new Date().toLocaleTimeString()
+    });
   });
 
-  status.innerText = "✅ Checked Out";
+  alert("Checked Out");
 }
 
-/* 📋 LOAD */
-async function loadAttendance() {
-  if (adminPin.value !== ADMIN_PIN) return alert("Wrong PIN");
+// 📋 LOAD ATTENDANCE
+function loadAttendance() {
 
-  const table = document.getElementById("table");
-  table.innerHTML = table.rows[0].outerHTML;
+  if (document.getElementById("adminPin").value !== ADMIN_PIN) {
+    alert("Wrong admin PIN");
+    return;
+  }
 
-  const snap = await db.collection("attendance").get();
+  let html = "<table><tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Dist</th></tr>";
 
-  snap.forEach(doc => {
-    const d = doc.data();
+  db.collection("attendance").get().then(snap => {
 
-    table.innerHTML += `
-      <tr>
+    snap.forEach(doc => {
+      const d = doc.data();
+
+      html += `<tr>
         <td>${d.name}</td>
         <td>${d.date}</td>
         <td>${d.checkIn}</td>
         <td>${d.checkOut || "-"}</td>
-        <td>${d.status}</td>
+        <td>${d.status || "-"}</td>
         <td>${d.distance || "-"}</td>
       </tr>`;
+    });
+
+    html += "</table>";
+    document.getElementById("data").innerHTML = html;
+  });
+
+  loadHolidays();
+}
+
+// 📅 ADD HOLIDAY
+function addHoliday() {
+  const date = prompt("Enter date YYYY-MM-DD");
+  const name = prompt("Holiday name");
+
+  if (!date) return;
+
+  db.collection("holidays").add({ date, name });
+}
+
+// 📅 LOAD HOLIDAYS
+function loadHolidays() {
+
+  let html = "<h4>📅 Holidays</h4>";
+
+  db.collection("holidays").get().then(snap => {
+
+    snap.forEach(doc => {
+      const h = doc.data();
+
+      html += `<p>${h.date} - ${h.name}
+      <button onclick="deleteHoliday('${doc.id}')">❌</button></p>`;
+    });
+
+    document.getElementById("holidays").innerHTML = html;
+  });
+}
+
+// ❌ DELETE HOLIDAY
+function deleteHoliday(id) {
+  db.collection("holidays").doc(id).delete();
+  loadHolidays();
+}
+
+// 📊 SUMMARY
+function monthlySummary() {
+
+  let summary = {};
+
+  db.collection("attendance").get().then(snap => {
+
+    snap.forEach(doc => {
+      const d = doc.data();
+
+      if (!summary[d.name]) {
+        summary[d.name] = { total: 0, late: 0 };
+      }
+
+      summary[d.name].total++;
+
+      if (d.status === "Late") {
+        summary[d.name].late++;
+      }
+    });
+
+    let html = "<h3>📊 Monthly Summary</h3>";
+    html += "<table><tr><th>Name</th><th>Total Days</th><th>Late Days</th></tr>";
+
+    for (let name in summary) {
+      html += `<tr>
+        <td>${name}</td>
+        <td>${summary[name].total}</td>
+        <td>${summary[name].late}</td>
+      </tr>`;
+    }
+
+    html += "</table>";
+
+    document.getElementById("summary").innerHTML = html;
   });
 }
 
