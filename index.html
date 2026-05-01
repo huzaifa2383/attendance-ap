@@ -1,237 +1,381 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>Madrasa Smart Attendance + Map</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Madrasa Attendance Pro Max</title>
 
-  <style>
-    :root { --primary: #2c3e50; --success: #27ae60; --info: #2980b9; --bg: #f0f2f5; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; background: var(--bg); margin: 0; padding: 15px; color: #333; }
-    .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
-    
-    h2, h3 { color: var(--primary); margin-top: 0; }
-    select, input { width: 100%; padding: 12px; margin: 8px 0; border: 2px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
-    
-    .btn-group { display: flex; gap: 10px; }
-    button { flex: 1; padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; transition: 0.3s; margin-bottom: 5px; }
-    
-    .btn-in { background: var(--success); color: white; }
-    .btn-out { background: var(--info); color: white; }
-    .btn-admin { background: var(--primary); color: white; width: 100%; }
-    button:hover { opacity: 0.8; }
+<style>
+body { 
+  font-family: Arial, sans-serif; 
+  text-align:center; 
+  background: linear-gradient(135deg,#667eea,#764ba2);
+  min-height: 100vh;
+  padding: 10px;
+}
+.box { 
+  background:white; 
+  padding:20px; 
+  margin:20px auto; 
+  max-width:420px; 
+  border-radius:12px; 
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+}
+button { 
+  padding:12px 20px; 
+  margin:5px; 
+  border:none; 
+  border-radius:6px; 
+  cursor:pointer; 
+  font-weight: bold;
+}
+.green{background:#2ecc71;color:white;}
+.blue{background:#3498db;color:white;}
+.dark{background:#34495e;color:white;}
+.red{background:#e74c3c;color:white;}
+.orange{background:#e67e22;color:white;}
 
-    #status { font-weight: bold; padding: 10px; border-radius: 5px; margin: 10px 0; }
-    .scroll-table { overflow-x: auto; margin-top: 15px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { border: 1px solid #eee; padding: 10px; text-align: left; }
-    th { background: #f8f9fa; }
+input,select{
+  width:90%;
+  padding:12px;
+  margin:8px;
+  border-radius:6px;
+  border: 2px solid #ddd;
+}
 
-    #map { height: 350px; width: 100%; margin-top: 20px; border-radius: 12px; border: 2px solid #ddd; display: none; }
-    hr { margin: 25px 0; border: 0; border-top: 1px solid #eee; }
-  </style>
+table{width:100%;margin-top:15px;border-collapse:collapse;}
+td,th{border:1px solid #ddd;padding:8px;font-size:12px;}
+th{background:#34495e;color:white;}
+
+.success{background:#d4edda;color:#155724;padding:10px;}
+.error{background:#f8d7da;color:#721c24;padding:10px;}
+</style>
 </head>
 
 <body>
 
-<div class="container">
-  <h2>📍 Madrasa Smart Attendance</h2>
-  
-  <select id="name">
-    <option value="">Select Your Name</option>
-    <option>Shk Huzaifa bhai</option>
-    <option>Shk Khuzaima bhai</option>
-    <option>Shk Taha bhai</option>
-    <option>Mulla Mohammad bhai</option>
-    <option>Farida ben</option>
-    <option>Arwa ben</option>
-    <option>Rashida ben</option>
-    <option>UmmeSalama ben</option>
-  </select>
+<div class="box">
+<h2>📍 Madrasa Attendance</h2>
 
-  <input type="password" id="pin" placeholder="Enter Personal PIN">
+<select id="name"></select>
+<input type="password" id="pin" placeholder="Enter PIN">
 
-  <div class="btn-group">
-    <button class="btn-in" onclick="checkIn()">Check In</button>
-    <button class="btn-out" onclick="checkOut()">Check Out</button>
-  </div>
+<button class="green" onclick="checkIn()">Check In</button>
+<button class="blue" onclick="checkOut()">Check Out</button>
 
-  <p id="status"></p>
-
-  <hr>
-
-  <h3>🔐 Admin Panel</h3>
-  <input type="password" id="adminPin" placeholder="Enter Admin PIN">
-  
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-    <button class="btn-admin" onclick="loadData()">View Attendance</button>
-    <button class="btn-admin" onclick="showMap()">Show Map View</button>
-    <button class="btn-admin" onclick="downloadCSV()">CSV Export</button>
-    <button class="btn-admin" onclick="addHoliday()">Add Holiday</button>
-  </div>
-
-  <div id="map"></div>
-
-  <div class="scroll-table">
-    <table id="table"></table>
-  </div>
-
-  <div class="scroll-table">
-    <table id="holidayTable"></table>
-  </div>
+<p id="status"></p>
 </div>
 
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where, updateDoc, doc, deleteDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+<div class="box">
+<h3>🔐 Admin Panel</h3>
+<input type="password" id="adminPin" placeholder="Admin PIN">
 
-// --- CONFIGURATION ---
-const firebaseConfig = {
-  apiKey: "AIzaSyARZZMs4J24iFjLgmLzqqIz2PnwWmosmGg",
-  authDomain: "madrasa-attendance-47e69.firebaseapp.com",
-  projectId: "madrasa-attendance-47e69",
-  storageBucket: "madrasa-attendance-47e69.firebasestorage.app",
-  messagingSenderId: "390959800510",
-  appId: "1:390959800510:web:19a1133e41b55b0ed1beef",
-  measurementId: "G-EK7LF2NLVE"
+<button class="dark" onclick="loadData()">View</button>
+<button class="dark" onclick="monthlySummary()">Summary</button>
+<button class="dark" onclick="downloadCSV()">CSV</button>
+
+<button class="orange" onclick="addHoliday()">Add Holiday</button>
+<button class="orange" onclick="viewHolidays()">View Holidays</button>
+
+<table id="table"></table>
+
+<div id="holidayDiv"></div>
+
+<h3>📊 Monthly Summary</h3>
+<table id="summary"></table>
+</div>
+
+<script>
+
+// 🔐 SETTINGS
+const ADMIN_PIN = btoa("1234"); // encoded
+const LAT = 18.51278;
+const LNG = 73.87936;
+const RADIUS = 200;
+
+// 👥 NAMES
+const names=[
+"Shk Huzaifa bhai",
+"Shk Khuzaima bhai",
+"Shk Taha bhai",
+"Mulla Mohammad bhai",
+"Farida ben",
+"Arwa ben",
+"Rashida ben",
+"UmmeSalama ben"
+];
+
+// 🔑 PINS
+const pins={
+"Shk Huzaifa bhai":"1111",
+"Shk Khuzaima bhai":"2222",
+"Shk Taha bhai":"3333",
+"Mulla Mohammad bhai":"4444",
+"Farida ben":"5555",
+"Arwa ben":"6666",
+"Rashida ben":"7777",
+"UmmeSalama ben":"8888"
 };
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
 
-const SCHOOL_LAT = 18.51278; 
-const SCHOOL_LNG = 73.87936;
-const RADIUS = 80; 
-const ADMIN_PIN = "9999";
+// populate dropdown
+names.forEach(n=>{
+ let o=document.createElement("option");
+ o.text=n;
+ document.getElementById("name").add(o);
+});
 
-const pins = {
-  "Shk Huzaifa bhai": "1111", "Shk Khuzaima bhai": "2222", "Shk Taha bhai": "3333",
-  "Mulla Mohammad bhai": "4444", "Farida ben": "5555", "Arwa ben": "6666",
-  "Rashida ben": "7777", "UmmeSalama ben": "8888"
-};
-
-let map;
-
-// --- UTILITIES ---
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI/180;
-  const dLon = (lon2 - lon1) * Math.PI/180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 1000;
+// safe parse
+function safeParse(v){
+ try{return JSON.parse(v);}catch{return null;}
 }
 
-const today = () => new Date().toDateString();
-
-// --- MAIN FUNCTIONS ---
-window.checkIn = async function() {
-  const name = document.getElementById("name").value;
-  const pin = document.getElementById("pin").value;
-  const statusEl = document.getElementById("status");
-
-  if (!name || pins[name] !== pin) { alert("Wrong Name or PIN"); return; }
-
-  statusEl.innerHTML = "⌛ Verifying location...";
-
-  navigator.geolocation.getCurrentPosition(async pos => {
-    const lat = pos.coords.latitude;
-    const lng = pos.coords.longitude;
-    const dist = getDistance(lat, lng, SCHOOL_LAT, SCHOOL_LNG);
-
-    if (dist > RADIUS) {
-      statusEl.style.color = "red";
-      statusEl.innerHTML = `❌ Outside Boundary (${Math.round(dist)}m)`;
-      return;
-    }
-
-    const q = query(collection(db, "attendance"), where("name","==",name), where("date","==",today()));
-    const snap = await getDocs(q);
-    if (!snap.empty) { alert("Already checked in today"); return; }
-
-    const now = new Date();
-    const lateTime = new Date(); lateTime.setHours(16,50,0);
-    const status = now > lateTime ? "Late" : "On Time";
-
-    await addDoc(collection(db, "attendance"), {
-      name, date: today(), in: now.toLocaleTimeString(), out: "", 
-      status, dist: Math.round(dist), lat, lng, timestamp: Date.now()
-    });
-
-    statusEl.style.color = "green";
-    statusEl.innerHTML = `✅ Checked In at ${now.toLocaleTimeString()}`;
-  }, () => {
-    alert("Please enable GPS/Location Access");
-  });
+// key
+function key(name,date){
+ date=date||new Date();
+ return name+"_"+date.toDateString();
 }
 
-window.checkOut = async function() {
-  const name = document.getElementById("name").value;
-  const q = query(collection(db, "attendance"), where("name","==",name), where("date","==",today()));
-  const snap = await getDocs(q);
-
-  if (snap.empty) { alert("No check-in found for today"); return; }
-  const d = snap.docs[0];
-  if (d.data().out) { alert("Already checked out"); return; }
-
-  await updateDoc(doc(db, "attendance", d.id), { out: new Date().toLocaleTimeString() });
-  alert("Checked Out successfully");
+// distance
+function dist(a,b,c,d){
+ let R=6371e3;
+ let φ1=a*Math.PI/180,φ2=c*Math.PI/180;
+ let Δφ=(c-a)*Math.PI/180;
+ let Δλ=(d-b)*Math.PI/180;
+ let x=Math.sin(Δφ/2)**2+
+ Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+ return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-window.loadData = async function() {
-  if (document.getElementById("adminPin").value !== ADMIN_PIN) { alert("Unauthorized"); return; }
-  const snap = await getDocs(query(collection(db, "attendance"), orderBy("timestamp", "desc")));
-  let html = "<tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th><th>Del</th></tr>";
-  snap.forEach(d => {
-    const x = d.data();
-    html += `<tr><td>${x.name}</td><td>${x.date}</td><td>${x.in}</td><td>${x.out || "-"}</td><td>${x.status}</td>
-    <td><button onclick="del('${d.id}')">❌</button></td></tr>`;
-  });
-  document.getElementById("table").innerHTML = html;
+// status message
+function show(msg,type){
+ let s=document.getElementById("status");
+ s.innerText=msg;
+ s.className=type;
+ setTimeout(()=>{s.innerText="";s.className="";},4000);
 }
 
-window.showMap = async function() {
-  if (document.getElementById("adminPin").value !== ADMIN_PIN) { alert("Unauthorized"); return; }
-  const mapDiv = document.getElementById("map");
-  mapDiv.style.display = "block";
+// holiday
+function isHoliday(){
+ let t=new Date().toDateString();
+ let h=safeParse(localStorage.getItem("holidays"))||[];
+ return h.includes(t);
+}
 
-  if (!map) {
-    map = L.map('map').setView([SCHOOL_LAT, SCHOOL_LNG], 16);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    L.circle([SCHOOL_LAT, SCHOOL_LNG], { color: 'green', radius: RADIUS }).addTo(map).bindPopup("Madrasa");
+// admin check
+function verifyAdmin(){
+ if(btoa(document.getElementById("adminPin").value)!==ADMIN_PIN){
+  alert("Wrong Admin PIN"); return false;
+ }
+ return true;
+}
+
+// SELECT NAME
+function nameSelect(){
+ return document.getElementById("name").value;
+}
+
+// CHECK IN
+function checkIn(){
+ let name=nameSelect();
+ let pin=document.getElementById("pin").value;
+
+ if(pins[name]!==pin){show("Wrong PIN","error");return;}
+ if(isHoliday()){show("Holiday","error");return;}
+
+ navigator.geolocation.getCurrentPosition(pos=>{
+
+ if(pos.coords.accuracy>100){
+  show("Weak GPS","error");return;
+ }
+
+ let d=dist(pos.coords.latitude,pos.coords.longitude,LAT,LNG);
+ if(d>RADIUS){show("Outside "+Math.round(d)+"m","error");return;}
+
+ let k=key(name);
+ if(localStorage.getItem(k)){show("Already checked in","error");return;}
+
+ let now=new Date();
+ let start=new Date();start.setHours(16,0,0);
+ let late=new Date();late.setHours(16,50,0);
+
+ let status="";
+ if(now<start){show("Too early","error");return;}
+ else if(now<=late){status="On Time";}
+ else{status="Late";}
+
+ localStorage.setItem(k,JSON.stringify({
+  name,
+  date:now.toDateString(),
+  in:now.toLocaleTimeString(),
+  out:"",
+  status
+ }));
+
+ show("Checked In ("+status+")","success");
+ });
+}
+
+// CHECK OUT
+function checkOut(){
+ let name=nameSelect();
+ let pin=document.getElementById("pin").value;
+
+ if(pins[name]!==pin){show("Wrong PIN","error");return;}
+
+ let k=key(name);
+ let data=safeParse(localStorage.getItem(k));
+
+ if(!data){show("No check-in","error");return;}
+
+ let now=new Date();
+ let cutoff=new Date();cutoff.setHours(22,0,0);
+
+ if(now>cutoff){show("Attendance closed","error");return;}
+
+ if(data.out){show("Already checked out","error");return;}
+
+ data.out=now.toLocaleTimeString();
+ localStorage.setItem(k,JSON.stringify(data));
+
+ show("Checked Out","success");
+}
+
+// LOAD DATA
+function loadData(){
+ if(!verifyAdmin())return;
+
+ let html="<tr><th>Name</th><th>Date</th><th>In</th><th>Out</th><th>Status</th></tr>";
+
+ for(let k in localStorage){
+  if(k.includes("_") && k!=="holidays"){
+   let d=safeParse(localStorage.getItem(k));
+   if(!d) continue;
+
+   html+=`<tr>
+   <td>${d.name}</td>
+   <td>${d.date}</td>
+   <td>${d.in}</td>
+   <td>${d.out||"-"}</td>
+   <td>${d.status}</td>
+   </tr>`;
   }
+ }
 
-  const snap = await getDocs(query(collection(db, "attendance"), where("date", "==", today())));
-  snap.forEach(d => {
-    const x = d.data();
-    if(x.lat) L.marker([x.lat, x.lng]).addTo(map).bindPopup(`${x.name} (${x.in})`);
-  });
+ document.getElementById("table").innerHTML=html;
 }
 
-window.del = async (id) => { if(confirm("Delete this record?")) { await deleteDoc(doc(db,"attendance",id)); loadData(); } };
+// SUMMARY
+function monthlySummary(){
+ if(!verifyAdmin())return;
 
-window.downloadCSV = async function() {
-  const snap = await getDocs(collection(db,"attendance"));
-  let csv = "Name,Date,In,Out,Status\n";
-  snap.forEach(d => { const x = d.data(); csv += `${x.name},${x.date},${x.in},${x.out},${x.status}\n`; });
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob); a.download = "attendance.csv"; a.click();
-};
+ let map={};
+ names.forEach(n=>map[n]={t:0,l:0,o:0,a:0});
 
-window.addHoliday = async function() {
-  const date = prompt("Enter Holiday (e.g. 15 Aug 2024)");
-  if (date) { await addDoc(collection(db,"holidays"),{date}); loadHolidays(); }
-};
+ for(let k in localStorage){
+  if(k.includes("_") && k!=="holidays"){
+   let d=safeParse(localStorage.getItem(k));
+   if(!d) continue;
 
-window.loadHolidays = async function() {
-  const snap = await getDocs(collection(db,"holidays"));
-  let html = "<tr><th>Holiday Date</th></tr>";
-  snap.forEach(d => { html += `<tr><td>${d.data().date}</td></tr>`; });
-  document.getElementById("holidayTable").innerHTML = html;
+   map[d.name].t++;
+   if(d.status==="Late")map[d.name].l++;
+   else if(d.status==="Absent")map[d.name].a++;
+   else map[d.name].o++;
+  }
+ }
+
+ let html="<tr><th>Name</th><th>Total</th><th>On Time</th><th>Late</th><th>Absent</th><th>%</th></tr>";
+
+ for(let n in map){
+  let present=map[n].o+map[n].l;
+  let percent=map[n].t?((present/map[n].t)*100).toFixed(1):0;
+
+  html+=`<tr>
+  <td>${n}</td>
+  <td>${map[n].t}</td>
+  <td>${map[n].o}</td>
+  <td>${map[n].l}</td>
+  <td>${map[n].a}</td>
+  <td>${percent}%</td>
+  </tr>`;
+ }
+
+ document.getElementById("summary").innerHTML=html;
+}
+
+// CSV
+function downloadCSV(){
+ let csv="Name,Date,In,Out,Status\n";
+
+ for(let k in localStorage){
+  if(k.includes("_") && k!=="holidays"){
+   let d=safeParse(localStorage.getItem(k));
+   if(!d) continue;
+
+   csv+=`${d.name},${d.date},${d.in},${d.out},${d.status}\n`;
+  }
+ }
+
+ let a=document.createElement("a");
+ a.href=URL.createObjectURL(new Blob([csv]));
+ a.download="attendance.csv";
+ a.click();
+}
+
+// ADD HOLIDAY
+function addHoliday(){
+ if(!verifyAdmin())return;
+
+ let date=prompt("Enter date DD/MM/YYYY");
+ if(!date)return;
+
+ let p=date.split("/");
+ let d=new Date(p[2],p[1]-1,p[0]).toDateString();
+
+ let h=safeParse(localStorage.getItem("holidays"))||[];
+ h.push(d);
+ localStorage.setItem("holidays",JSON.stringify(h));
+
+ alert("Holiday added");
+}
+
+// VIEW HOLIDAY
+function viewHolidays(){
+ let h=safeParse(localStorage.getItem("holidays"))||[];
+
+ let html="<h4>Holidays</h4>";
+ h.forEach(d=>{
+  html+=`<p>${d}</p>`;
+ });
+
+ document.getElementById("holidayDiv").innerHTML=html;
+}
+
+// AUTO ABSENT
+function autoAbsent(){
+ let now=new Date();
+ let cutoff=new Date();
+ cutoff.setHours(22,0,0);
+
+ if(now<cutoff)return;
+
+ names.forEach(n=>{
+  let k=key(n);
+  if(!localStorage.getItem(k)){
+   localStorage.setItem(k,JSON.stringify({
+    name:n,
+    date:now.toDateString(),
+    in:"-",
+    out:"-",
+    status:"Absent"
+   }));
+  }
+ });
+}
+
+window.onload=function(){
+ autoAbsent();
 };
 
 </script>
+
 </body>
 </html>
